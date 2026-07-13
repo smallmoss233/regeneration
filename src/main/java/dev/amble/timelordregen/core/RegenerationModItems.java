@@ -20,11 +20,11 @@ public class RegenerationModItems extends ItemContainer {
 
 /// Disabled cus they crash when placed. idk why and neither does theo - ADDIE
 
-    //@AutomaticModel
-   // @NoEnglish
-    //public static final Item CADON_BOAT = new ABoatItem(false, RegenerationModBoatTypes.CADON, new AItemSettings());
+    @AutomaticModel
+    @NoEnglish
+    public static final Item CADON_BOAT = new ABoatItem(false, RegenerationModBoatTypes.CADON, new AItemSettings());
 
-    //@AutomaticModel
-    //@NoEnglish
-    //public static final Item CADON_CHEST_BOAT = new ABoatItem(true, RegenerationModBoatTypes.CADON, new AItemSettings());
+    @AutomaticModel
+    @NoEnglish
+    public static final Item CADON_CHEST_BOAT = new ABoatItem(true, RegenerationModBoatTypes.CADON, new AItemSettings());
 }
