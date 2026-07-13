@@ -1,9 +1,5 @@
 package dev.amble.timelordregen.client;
 
-import com.google.gson.JsonObject;
-import com.terraformersmc.terraform.boat.api.client.TerraformBoatClientHelper;
-import dev.amble.ait.client.renderers.sky.MarsSkyProperties;
-import dev.amble.ait.core.AITDimensions;
 import dev.amble.timelordregen.RegenerationMod;
 import dev.amble.timelordregen.client.gui.DelayOverlay;
 import dev.amble.timelordregen.client.gui.RegenerationSettingsScreen;
@@ -27,13 +23,6 @@ import net.fabricmc.fabric.api.resource.ResourcePackActivationType;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.item.ModelPredicateProviderRegistry;
 import net.minecraft.client.render.RenderLayer;
-
-import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.util.Base64;
 
 import static dev.amble.timelordregen.RegenerationMod.id;
 
