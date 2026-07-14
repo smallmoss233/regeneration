@@ -44,5 +44,7 @@
   "origin.timelordregen.regeneration.name": "重生",
   "origin.timelordregen.timelord.description": "你是一名时间领主，来自伽理弗雷，可以通过重生来逃脱死亡。",
   "origin.timelordregen.timelord.name": "时间领主",
+  "key.timelordregen.open_settings": "打开重生设置",
+  "category.timelordregen": "时间领主-重生",
   "dimension.timelordregen.gallifrey": "伽理弗雷"
 }

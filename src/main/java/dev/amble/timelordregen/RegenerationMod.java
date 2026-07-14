@@ -49,7 +49,7 @@ public class RegenerationMod implements ModInitializer {
 
 	    Attachments.init();
         RegenerationModDimensions.init();
-        Networking.register();
+        Networking.registerServerReceivers();
         RegistryContainer.register(RegenerationModItemGroups.class, MOD_ID);
         RegistryContainer.register(RegenerationModBlocks.class, MOD_ID);
         RegistryContainer.register(RegenerationModItems.class, MOD_ID);

@@ -14,6 +14,8 @@ import dev.amble.timelordregen.core.item.PocketWatchItem;
 import dev.amble.timelordregen.network.Networking;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.blockrenderlayer.v1.BlockRenderLayerMap;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.particle.v1.ParticleFactoryRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.DimensionRenderingRegistry;
@@ -22,7 +24,10 @@ import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
 import net.fabricmc.fabric.api.resource.ResourcePackActivationType;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.item.ModelPredicateProviderRegistry;
+import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.util.InputUtil;
+import org.lwjgl.glfw.GLFW;
 
 import static dev.amble.timelordregen.RegenerationMod.id;
 
@@ -59,7 +64,32 @@ public class RegenerationClientMod implements ClientModInitializer {
                 }
             });
         });
-    }
+    registerKeyBindings();
+}
+
+//GUI按键开关
+private void registerKeyBindings() {
+    // 创建按键绑定，默认未绑定（玩家自行在控制菜单设置）
+    KeyBinding openSettingsKey = new KeyBinding(
+            "key.timelordregen.open_settings",      // 翻译 key
+            InputUtil.Type.KEYSYM,
+            GLFW.GLFW_KEY_UNKNOWN,                  // 默认无按键
+            "category.timelordregen"                 // 按键分类
+    );
+    KeyBindingHelper.registerKeyBinding(openSettingsKey);
+
+    // 监听按键按下事件
+    ClientTickEvents.END_CLIENT_TICK.register(client -> {
+        // 确保玩家存在且按键被按下
+        if (openSettingsKey.wasPressed() && client.player != null) {
+            // 发送请求包给服务端
+            net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(
+                    dev.amble.timelordregen.network.Networking.REQUEST_OPEN_GUI,
+                    net.fabricmc.fabric.api.networking.v1.PacketByteBufs.create()
+            );
+        }
+    });
+}
 
     public static void BlockRenderLayerMapRegister() {
         BlockRenderLayerMap.INSTANCE.putBlock(RegenerationModBlocks.GALLIFREY_GRASS_BLOCK, RenderLayer.getCutout());
