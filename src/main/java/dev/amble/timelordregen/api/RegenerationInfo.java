@@ -8,6 +8,7 @@ import dev.amble.timelordregen.animation.RegenAnimRegistry;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import dev.amble.lib.animation.AnimatedEntity;
+import dev.amble.lib.animation.AnimationTracker;
 import dev.amble.timelordregen.data.Attachments;
 import dev.drtheo.scheduler.api.TimeUnit;
 import dev.drtheo.scheduler.api.common.Scheduler;
@@ -60,7 +61,7 @@ public class RegenerationInfo {
             RegenerationInfo info = regen.getRegenerationInfo();
             if (info != null && info.isRegenerating()) {
                 info.setRegenQueued(true);
-                info.stopRegeneration();
+                info.stopRegeneration(entity);
             }
         });
 
@@ -69,9 +70,7 @@ public class RegenerationInfo {
             if (!(entity instanceof RegenerationCapable regen)) return;
             RegenerationInfo info = regen.getRegenerationInfo();
             if (info != null && info.isRegenQueued()) {
-                // 玩家加入时尝试继续重生，但要检查是否还满足条件
                 if (!info.start(entity)) {
-                    // 如果启动失败，清除排队状态
                     info.setRegenQueued(false);
                     info.markDirty();
                 }
@@ -81,7 +80,6 @@ public class RegenerationInfo {
         ServerLivingEntityEvents.ALLOW_DEATH.register((entity, damageSource, damageAmount) -> {
             RegenerationInfo info = RegenerationInfo.get(entity);
             if (info == null) return true;
-            // 只有还未激活且有余命时才尝试重生
             if (!info.isActive() && info.getUsesLeft() > 0) {
                 return !info.tryStart(entity);
             }
@@ -126,6 +124,8 @@ public class RegenerationInfo {
     private final Delay delay;
     private boolean dirty;
     private final Vector3f particleColor;
+    @Nullable
+    private AnimationSet currentAnimationSet;
 
     // ========== 构造器 ==========
     private RegenerationInfo(int usesLeft, boolean isRegenerating, boolean regenQueued, Identifier animation, Delay delay) {
@@ -215,7 +215,6 @@ public class RegenerationInfo {
 
         if (this.isDirty()) {
             this.setDirty(false);
-            // 对所有玩家同步（包括非玩家实体）
             for (ServerPlayerEntity player : entity.getWorld().getServer().getPlayerManager().getPlayerList()) {
                 this.sync(player, entity.getUuid());
             }
@@ -225,7 +224,6 @@ public class RegenerationInfo {
             if (this.getUsesLeft() <= 0) {
                 delay.stop();
                 this.markDirty();
-                // 如果没有剩余次数，尝试停止延迟并可能触发事件
                 return;
             }
             Delay.Result result = delay.tick(entity.age);
@@ -244,7 +242,6 @@ public class RegenerationInfo {
         }
 
         if (isRegenQueued()) {
-            // 尝试启动重生，如果失败则清除排队状态
             if (!this.start(entity)) {
                 this.setRegenQueued(false);
                 this.markDirty();
@@ -258,7 +255,7 @@ public class RegenerationInfo {
      */
     public boolean tryStart(LivingEntity entity) {
         if (this.isActive() || this.usesLeft <= 0) return false;
-        if (!entity.isAlive()) return false; // 实体已死亡
+        if (!entity.isAlive()) return false;
         this.delay.start(entity.age);
         this.markDirty();
         entity.setHealth(entity.getMaxHealth());
@@ -282,9 +279,10 @@ public class RegenerationInfo {
         entity.setHealth(entity.getMaxHealth());
 
         if (entity instanceof AnimatedEntity animated) {
-            // ★ 直接随机获取模板，确保每次重生动画不同
             AnimationTemplate template = RegenAnimRegistry.getInstance().getRandom();
             AnimationSet set = template.instantiate(true);
+            this.currentAnimationSet = set;
+
             set.finish(() -> {
                 RegenerationMod.LOGGER.info("Animation finish callback for {}", entity.getUuid());
                 this.finish(entity);
@@ -297,7 +295,6 @@ public class RegenerationInfo {
             }
             RegenerationMod.LOGGER.info("Started regeneration animation for {}", entity.getUuid());
         } else {
-            // 非动画实体，5秒后完成
             Scheduler.get().runTaskLater(() -> {
                 RegenerationMod.LOGGER.info("Non-animated entity regeneration finish for {}", entity.getUuid());
                 this.finish(entity);
@@ -314,26 +311,70 @@ public class RegenerationInfo {
      */
     private void finish(LivingEntity entity) {
         RegenerationMod.LOGGER.info("finish() called for {}", entity.getUuid());
-        this.stopRegeneration();
+
+        // FIX: 强制清理动画状态，防止玩家卡在动画中无法移动
+        this.resetAnimationState(entity);
+
+        this.stopRegeneration(entity);
         RegenerationEvents.FINISH.invoker().onFinish(entity, this);
         this.setAnimation(RegenAnimRegistry.getInstance().getRandom());
         this.markDirty();
-        // 重置实体状态
+
         entity.setNoGravity(false);
         entity.setVelocity(entity.getVelocity().multiply(0.5));
         entity.updatePosition(entity.getX(), entity.getY(), entity.getZ());
         RegenerationMod.LOGGER.info("Regeneration finished for {}", entity.getUuid());
     }
 
+    /**
+     * 重置实体的动画状态，防止动画残留导致无法移动
+     */
+    private void resetAnimationState(LivingEntity entity) {
+        if (!(entity instanceof AnimatedEntity animated)) return;
+
+        try {
+            animated.getAnimationState().stop();
+            AnimationTracker.getInstance().remove(animated.getUuid());
+            RegenerationMod.LOGGER.debug("Animation state reset for {}", entity.getUuid());
+        } catch (Exception e) {
+            RegenerationMod.LOGGER.error("Failed to reset animation state for {}", entity.getUuid(), e);
+        }
+
+        this.currentAnimationSet = null;
+    }
+
     private Identifier getAnimationId() {
         return this.getAnimation().id();
     }
 
-    public void stopRegeneration() {
+    /**
+     * 停止重生过程并清理所有相关状态
+     * @param entity 需要清理动画状态的实体，可为 null（仅在确定无动画状态时）
+     */
+    public void stopRegeneration(@Nullable LivingEntity entity) {
+        // FIX: 如果有正在运行的动画集，先取消它
+        if (this.currentAnimationSet != null) {
+            this.currentAnimationSet.cancel();
+            this.currentAnimationSet = null;
+        }
+
+        // FIX: 清理实体动画状态
+        if (entity instanceof AnimatedEntity) {
+            this.resetAnimationState(entity);
+        }
+
         this.setRegenerating(false);
         this.delay.stop();
         this.markDirty();
         RegenerationMod.LOGGER.debug("Regeneration stopped for (state reset)");
+    }
+
+    /**
+     * @deprecated 请使用 {@link #stopRegeneration(LivingEntity)} 以确保动画状态被正确清理
+     */
+    @Deprecated
+    public void stopRegeneration() {
+        this.stopRegeneration(null);
     }
 
     public boolean tryStopDelayEvent(@Nullable LivingEntity entity) {
@@ -460,7 +501,7 @@ public class RegenerationInfo {
                 return Result.NONE;
             }
             if (current - this.start >= MAX_DURATION) {
-                this.stop(); // 重置 start 和 lastEvent
+                this.stop();
                 return Result.REGENERATE;
             }
             if (this.lastEvent > 0 && current - this.lastEvent >= TIME_TO_STOP) {

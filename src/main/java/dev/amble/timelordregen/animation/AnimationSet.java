@@ -1,6 +1,7 @@
 package dev.amble.timelordregen.animation;
 
 import dev.amble.lib.animation.AnimatedEntity;
+import dev.amble.lib.animation.AnimationTracker;
 import dev.amble.timelordregen.RegenerationMod;
 import dev.drtheo.scheduler.api.common.Scheduler;
 import dev.drtheo.scheduler.api.common.TaskStage;
@@ -18,6 +19,7 @@ public class AnimationSet {
     private final List<Runnable> finishCallbacks;
     private AnimationTemplate.Stage current;
     private boolean cancelled = false;
+    private boolean finished = false;
     @Getter
     @Nullable private AnimatedEntity target;
 
@@ -66,18 +68,17 @@ public class AnimationSet {
     public void start(AnimatedEntity target) {
         this.target = target;
         this.cancelled = false;
+        this.finished = false;
         this.setStage(AnimationTemplate.Stage.START);
         this.runStage(this.current);
     }
 
     private void runStage(AnimationTemplate.Stage stage) {
-        // 如果已取消或目标丢失，直接完成
         if (this.cancelled || this.target == null) {
             this.finishAnimation();
             return;
         }
 
-        // 如果 stage 为 null，表示所有阶段已完成
         if (stage == null) {
             this.finishAnimation();
             return;
@@ -85,7 +86,6 @@ public class AnimationSet {
 
         AnimationTemplate.ReferenceWrapper wrapper = this.get(stage);
         if (wrapper == null) {
-            // 没有动画引用，跳过此阶段
             RegenerationMod.LOGGER.warn("No animation reference for stage {}, skipping", stage);
             AnimationTemplate.Stage next = this.nextStage(stage);
             if (next != null) {
@@ -97,7 +97,6 @@ public class AnimationSet {
             return;
         }
 
-        // 检查动画时长是否有效
         long duration = wrapper.duration();
         if (duration <= 0) {
             RegenerationMod.LOGGER.warn("Invalid duration {} for stage {}, skipping", duration, stage);
@@ -111,12 +110,9 @@ public class AnimationSet {
             return;
         }
 
-        // 播放动画
         this.target.playAnimation(wrapper.reference());
 
-        // 调度下一阶段
         Scheduler.get().runTaskLater(() -> {
-            // 再次检查状态
             if (this.cancelled || this.target == null) {
                 this.finishAnimation();
                 return;
@@ -133,28 +129,44 @@ public class AnimationSet {
 
     /**
      * 执行所有 finish 回调并清理状态
+     * FIX: 确保动画状态被正确停止，防止实体卡在动画中
      */
     private void finishAnimation() {
-        if (this.cancelled) return; // 防止重复执行
+        if (this.finished) return;
+        this.finished = true;
         this.cancelled = true;
+
+        // FIX: 停止目标实体的动画状态，防止残留
+        if (this.target != null) {
+            try {
+                this.target.getAnimationState().stop();
+                AnimationTracker.getInstance().remove(this.target.getUuid());
+                RegenerationMod.LOGGER.debug("Animation state stopped for {}", this.target.getUuid());
+            } catch (Exception e) {
+                RegenerationMod.LOGGER.error("Failed to stop animation state in finishAnimation", e);
+            }
+        }
+
         RegenerationMod.LOGGER.info("AnimationSet finishing with {} callbacks", finishCallbacks.size());
-        for (Runnable cb : this.finishCallbacks) {
+        for (Runnable cb : new ArrayList<>(this.finishCallbacks)) {
             try {
                 cb.run();
             } catch (Exception e) {
                 RegenerationMod.LOGGER.error("Error in AnimationSet finish callback", e);
             }
         }
-        // 清理回调列表，防止内存泄漏
         this.finishCallbacks.clear();
-        this.target = null; // 释放引用
+        this.callbacks.clear();
+        this.target = null;
     }
 
     /**
      * 取消动画（也会触发 finish）
+     * FIX: 确保取消时也会清理动画状态
      */
     public void cancel() {
-        if (this.cancelled) return;
+        if (this.finished) return;
+        RegenerationMod.LOGGER.debug("AnimationSet cancelled");
         this.finishAnimation();
     }
 }
