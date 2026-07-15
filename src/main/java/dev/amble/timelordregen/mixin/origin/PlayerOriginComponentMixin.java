@@ -11,12 +11,12 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(PlayerOriginComponent.class)
+@Mixin(value = PlayerOriginComponent.class, remap = false)
 public class PlayerOriginComponentMixin {
     @Shadow
     private PlayerEntity player;
 
-    @Inject(method="setOrigin", at = @At("TAIL"), remap = false)
+    @Inject(method = "setOrigin", at = @At("TAIL"), remap = false)
     public void regeneration$setOrigin(OriginLayer layer, Origin origin, CallbackInfo ci) {
         OriginCompat.setupRegenerationPower(this.player);
     }
