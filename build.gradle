@@ -119,7 +119,10 @@ processResources {
     inputs.property "version", project.version
     inputs.property "amblekit_version", project.amblekit_version
 
-    exclude '.cache'
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+
+    exclude 'src/main/generated/**'
+    exclude '**/lang/*.json'
 
     def expansionVars = [
             "version": project.version,
@@ -128,7 +131,6 @@ processResources {
 
     filesMatching("fabric.mod.json") {
         expand "version": inputs.properties.version
-
     }
 }
 
