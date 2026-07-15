@@ -37,7 +37,7 @@
                   ]
                 }
               ],
-              "name": "timelordregen:candon_leaves"
+              "name": "timelordregen:cadon_leaves"
             },
             {
               "type": "minecraft:item",
@@ -132,5 +132,5 @@
       "rolls": 1.0
     }
   ],
-  "random_sequence": "timelordregen:blocks/candon_leaves"
+  "random_sequence": "timelordregen:blocks/cadon_leaves"
 }

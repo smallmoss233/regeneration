@@ -1,101 +1,146 @@
 package dev.amble.timelordregen.datagen.providers;
 
 import dev.amble.timelordregen.RegenerationMod;
+import dev.amble.timelordregen.core.RegenerationModBlocks;
 import net.fabricmc.fabric.api.datagen.v1.FabricDataOutput;
 import net.fabricmc.fabric.api.datagen.v1.provider.FabricRecipeProvider;
 import net.minecraft.block.Block;
 import net.minecraft.data.server.recipe.*;
+import net.minecraft.item.Items;
 import net.minecraft.recipe.Ingredient;
 import net.minecraft.recipe.book.RecipeCategory;
 import net.minecraft.util.Identifier;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
 import java.util.function.Consumer;
 
 public class RegenerationRecipeProvider extends FabricRecipeProvider {
-    public List<ShapelessRecipeJsonBuilder> shapelessRecipes = new ArrayList<>();
-    public List<ShapedRecipeJsonBuilder> shapedRecipes = new ArrayList<>();
-    public HashMap<SmithingTransformRecipeJsonBuilder, Identifier> smithingTransformRecipes = new HashMap<>();
-    public HashMap<ShapelessRecipeJsonBuilder, Identifier> shapelessRecipesWithNameHashMap = new HashMap<>();
-    public HashMap<ShapedRecipeJsonBuilder, Identifier> shapedRecipesWithNameHashMap = new HashMap<>();
-    public HashMap<SingleItemRecipeJsonBuilder, Identifier> stonecutting = new HashMap<>();
-    public List<CookingRecipeJsonBuilder> blasting = new ArrayList<>();
-
-
     public RegenerationRecipeProvider(FabricDataOutput output) {
         super(output);
     }
 
     @Override
     public void generate(Consumer<RecipeJsonProvider> exporter) {
-        for (ShapelessRecipeJsonBuilder shapelessRecipeJsonBuilder : shapelessRecipes) {
-            shapelessRecipeJsonBuilder.offerTo(exporter);
-        }
-        for (ShapedRecipeJsonBuilder shapedRecipeJsonBuilder : shapedRecipes) {
-            shapedRecipeJsonBuilder.offerTo(exporter);
-        }
-        shapelessRecipesWithNameHashMap.forEach((builder, id) -> builder.offerTo(exporter, id));
+        // ==================== 1. 原木/木头 → 木板（使用 Shapeless） ====================
+        addPlanksRecipeShapeless(exporter, RegenerationModBlocks.CADON_LOG, 4);
+        addPlanksRecipeShapeless(exporter, RegenerationModBlocks.STRIPPED_CADON_LOG, 4);
+        addPlanksRecipeShapeless(exporter, RegenerationModBlocks.CADON_WOOD, 4);
+        addPlanksRecipeShapeless(exporter, RegenerationModBlocks.STRIPPED_CADON_WOOD, 4);
 
-        smithingTransformRecipes.forEach((smithingTransformRecipeJsonBuilder, identifier) -> {
-            smithingTransformRecipeJsonBuilder.offerTo(exporter, identifier);
-        });
-        shapedRecipesWithNameHashMap.forEach((builder, id) -> builder.offerTo(exporter, id));
+        // ==================== 2. 原木 → 木头（Wood）====================
+        // 只有这里注册一次，不要放在 addPlanksRecipeShapeless 里
+        ShapedRecipeJsonBuilder.create(RecipeCategory.BUILDING_BLOCKS, RegenerationModBlocks.CADON_WOOD, 1)
+                .pattern("##")
+                .pattern("##")
+                .input('#', RegenerationModBlocks.CADON_LOG)
+                .criterion("has_log", conditionsFromItem(RegenerationModBlocks.CADON_LOG))
+                .offerTo(exporter, new Identifier(RegenerationMod.MOD_ID, "cadon_wood_from_logs"));
 
-        stonecutting.forEach((stonecuttingRecipeJsonBuilder, identifier) -> {
-            stonecuttingRecipeJsonBuilder.offerTo(exporter, identifier);
-        });
+        ShapedRecipeJsonBuilder.create(RecipeCategory.BUILDING_BLOCKS, RegenerationModBlocks.STRIPPED_CADON_WOOD, 1)
+                .pattern("##")
+                .pattern("##")
+                .input('#', RegenerationModBlocks.STRIPPED_CADON_LOG)
+                .criterion("has_stripped_log", conditionsFromItem(RegenerationModBlocks.STRIPPED_CADON_LOG))
+                .offerTo(exporter, new Identifier(RegenerationMod.MOD_ID, "stripped_cadon_wood_from_logs"));
 
-        for (CookingRecipeJsonBuilder cookingRecipeJsonBuilder : blasting) {
-            cookingRecipeJsonBuilder.offerTo(exporter);
-        }
+        // ==================== 3. 木板 → 楼梯、台阶等（Shaped） ====================
+        // 楼梯 (4个)
+        ShapedRecipeJsonBuilder.create(RecipeCategory.BUILDING_BLOCKS, RegenerationModBlocks.CADON_STAIRS, 4)
+                .pattern("#  ")
+                .pattern("## ")
+                .pattern("###")
+                .input('#', RegenerationModBlocks.CADON_PLANKS)
+                .criterion("has_planks", conditionsFromItem(RegenerationModBlocks.CADON_PLANKS))
+                .offerTo(exporter, new Identifier(RegenerationMod.MOD_ID, "cadon_stairs_from_planks"));
+
+        // 台阶 (6个)
+        ShapedRecipeJsonBuilder.create(RecipeCategory.BUILDING_BLOCKS, RegenerationModBlocks.CADON_SLAB, 6)
+                .pattern("###")
+                .input('#', RegenerationModBlocks.CADON_PLANKS)
+                .criterion("has_planks", conditionsFromItem(RegenerationModBlocks.CADON_PLANKS))
+                .offerTo(exporter, new Identifier(RegenerationMod.MOD_ID, "cadon_slab_from_planks"));
+
+        // 栅栏 (3个)
+        ShapedRecipeJsonBuilder.create(RecipeCategory.BUILDING_BLOCKS, RegenerationModBlocks.CADON_FENCE, 3)
+                .pattern("#/#")
+                .pattern("#/#")
+                .input('#', RegenerationModBlocks.CADON_PLANKS)
+                .input('/', Items.STICK)
+                .criterion("has_planks", conditionsFromItem(RegenerationModBlocks.CADON_PLANKS))
+                .offerTo(exporter, new Identifier(RegenerationMod.MOD_ID, "cadon_fence_from_planks"));
+
+        // 栅栏门 (1个)
+        ShapedRecipeJsonBuilder.create(RecipeCategory.BUILDING_BLOCKS, RegenerationModBlocks.CADON_FENCE_GATE, 1)
+                .pattern("/#/")
+                .pattern("/#/")
+                .input('#', RegenerationModBlocks.CADON_PLANKS)
+                .input('/', Items.STICK)
+                .criterion("has_planks", conditionsFromItem(RegenerationModBlocks.CADON_PLANKS))
+                .offerTo(exporter, new Identifier(RegenerationMod.MOD_ID, "cadon_fence_gate_from_planks"));
+
+        // 门 (3个)
+        ShapedRecipeJsonBuilder.create(RecipeCategory.BUILDING_BLOCKS, RegenerationModBlocks.CADON_DOOR, 3)
+                .pattern("##")
+                .pattern("##")
+                .pattern("##")
+                .input('#', RegenerationModBlocks.CADON_PLANKS)
+                .criterion("has_planks", conditionsFromItem(RegenerationModBlocks.CADON_PLANKS))
+                .offerTo(exporter, new Identifier(RegenerationMod.MOD_ID, "cadon_door_from_planks"));
+
+        // 活板门 (2个)
+        ShapedRecipeJsonBuilder.create(RecipeCategory.BUILDING_BLOCKS, RegenerationModBlocks.CADON_TRAPDOOR, 2)
+                .pattern("###")
+                .pattern("###")
+                .input('#', RegenerationModBlocks.CADON_PLANKS)
+                .criterion("has_planks", conditionsFromItem(RegenerationModBlocks.CADON_PLANKS))
+                .offerTo(exporter, new Identifier(RegenerationMod.MOD_ID, "cadon_trapdoor_from_planks"));
+
+        // 压力板 (1个)
+        ShapedRecipeJsonBuilder.create(RecipeCategory.REDSTONE, RegenerationModBlocks.CADON_PRESSURE_PLATE, 1)
+                .pattern("##")
+                .input('#', RegenerationModBlocks.CADON_PLANKS)
+                .criterion("has_planks", conditionsFromItem(RegenerationModBlocks.CADON_PLANKS))
+                .offerTo(exporter, new Identifier(RegenerationMod.MOD_ID, "cadon_pressure_plate_from_planks"));
+
+        // 按钮 (1个) - 单输入，使用 Shapeless
+        ShapelessRecipeJsonBuilder.create(RecipeCategory.REDSTONE, RegenerationModBlocks.CADON_BUTTON, 1)
+                .input(RegenerationModBlocks.CADON_PLANKS)
+                .criterion("has_planks", conditionsFromItem(RegenerationModBlocks.CADON_PLANKS))
+                .offerTo(exporter, new Identifier(RegenerationMod.MOD_ID, "cadon_button_from_planks"));
+
+        // 木棍 (4个) - 单输入，使用 Shapeless
+        ShapelessRecipeJsonBuilder.create(RecipeCategory.MISC, Items.STICK, 4)
+                .input(RegenerationModBlocks.CADON_PLANKS)
+                .criterion("has_planks", conditionsFromItem(RegenerationModBlocks.CADON_PLANKS))
+                .offerTo(exporter, new Identifier(RegenerationMod.MOD_ID, "sticks_from_cadon_planks"));
+
+        // ==================== 4. 熔炉配方：原木/木头 → 木炭 ====================
+        CookingRecipeJsonBuilder.createSmelting(Ingredient.ofItems(RegenerationModBlocks.CADON_LOG), RecipeCategory.MISC, Items.CHARCOAL, 0.15f, 200)
+                .criterion("has_log", conditionsFromItem(RegenerationModBlocks.CADON_LOG))
+                .offerTo(exporter, new Identifier(RegenerationMod.MOD_ID, "charcoal_from_cadon_log"));
+
+        CookingRecipeJsonBuilder.createSmelting(Ingredient.ofItems(RegenerationModBlocks.STRIPPED_CADON_LOG), RecipeCategory.MISC, Items.CHARCOAL, 0.15f, 200)
+                .criterion("has_stripped_log", conditionsFromItem(RegenerationModBlocks.STRIPPED_CADON_LOG))
+                .offerTo(exporter, new Identifier(RegenerationMod.MOD_ID, "charcoal_from_stripped_cadon_log"));
+
+        CookingRecipeJsonBuilder.createSmelting(Ingredient.ofItems(RegenerationModBlocks.CADON_WOOD), RecipeCategory.MISC, Items.CHARCOAL, 0.15f, 200)
+                .criterion("has_wood", conditionsFromItem(RegenerationModBlocks.CADON_WOOD))
+                .offerTo(exporter, new Identifier(RegenerationMod.MOD_ID, "charcoal_from_cadon_wood"));
+
+        CookingRecipeJsonBuilder.createSmelting(Ingredient.ofItems(RegenerationModBlocks.STRIPPED_CADON_WOOD), RecipeCategory.MISC, Items.CHARCOAL, 0.15f, 200)
+                .criterion("has_stripped_wood", conditionsFromItem(RegenerationModBlocks.STRIPPED_CADON_WOOD))
+                .offerTo(exporter, new Identifier(RegenerationMod.MOD_ID, "charcoal_from_stripped_cadon_wood"));
     }
 
-    public void addShapelessRecipe(ShapelessRecipeJsonBuilder builder) {
-        if (!shapelessRecipes.contains(builder)) {
-            shapelessRecipes.add(builder);
-        }
+    // 只负责：原木/木头 → 木板 的 shapeless 配方
+    private void addPlanksRecipeShapeless(Consumer<RecipeJsonProvider> exporter, Block logBlock, int count) {
+        ShapelessRecipeJsonBuilder.create(RecipeCategory.BUILDING_BLOCKS, RegenerationModBlocks.CADON_PLANKS, count)
+                .input(logBlock)
+                .criterion("has_log", conditionsFromItem(logBlock))
+                .offerTo(exporter, new Identifier(RegenerationMod.MOD_ID,
+                        "planks_from_" + fixupBlockKey(logBlock.getTranslationKey())));
     }
 
-    public void addShapelessRecipe(ShapelessRecipeJsonBuilder builder, Identifier id) {
-        shapelessRecipesWithNameHashMap.put(builder, id);
-    }
-
-    public void addSmithingTransformRecipe(SmithingTransformRecipeJsonBuilder builder, Identifier id) {
-        smithingTransformRecipes.put(builder, id);
-    }
-
-    public void addShapedRecipe(ShapedRecipeJsonBuilder builder, Identifier id) {
-        shapedRecipesWithNameHashMap.put(builder, id);
-    }
-
-    public void addShapedRecipe(ShapedRecipeJsonBuilder builder) {
-        if (!shapedRecipes.contains(builder)) {
-            shapedRecipes.add(builder);
-        }
-    }
-
-    public void addStonecutting(Block in, Block out, int count) {
-        Identifier id = getStonecuttingIdentifier(in, out);
-
-        stonecutting.put(SingleItemRecipeJsonBuilder.createStonecutting(Ingredient.ofItems(in), RecipeCategory.BUILDING_BLOCKS, out, count).criterion("has_block", VanillaRecipeProvider.conditionsFromItem(in)), id);
-    }
-    public void addStonecutting(Block in, Block out) {
-        addStonecutting(in, out, 1);
-    }
-
-    private Identifier getStonecuttingIdentifier(Block in, Block out) {
-        return RegenerationMod.id(fixupBlockKey(in.getTranslationKey()) + "_to_" + fixupBlockKey(out.getTranslationKey()) + "_stonecutting");
-    }
     private String fixupBlockKey(String key) {
         return key.substring(key.lastIndexOf(".") + 1);
     }
-
-    public void addBlastFurnaceRecipe(CookingRecipeJsonBuilder cookingBuilder) {
-        if (!blasting.contains(cookingBuilder)) {
-            blasting.add(cookingBuilder);
-        }
-    }
 }
-
