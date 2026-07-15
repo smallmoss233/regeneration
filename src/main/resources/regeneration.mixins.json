@@ -10,7 +10,6 @@
     "origin.PlayerOriginComponentMixin",
     "TimelordAbilities.PlayerEntityAbilitiesMixin",
     "TimelordAbilities.PhantomSpawnerMixin",
-    "TimelordAbilities.LivingEntitySprintMixin"
   ],
   "client": [
     "ait.ControlEntityRendererMixin",
