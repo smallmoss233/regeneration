@@ -2,14 +2,21 @@ package dev.amble.timelordregen.core.item;
 
 import dev.amble.timelordregen.api.RegenerationCapable;
 import dev.amble.timelordregen.api.RegenerationInfo;
+import net.minecraft.client.item.TooltipContext;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.item.FoodComponent;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.sound.SoundEvent;
 import net.minecraft.sound.SoundEvents;
+import net.minecraft.text.Style;
+import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import net.minecraft.util.UseAction;
 import net.minecraft.world.World;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.List;
 
 public class ElixirOfLifeItem extends Item {
 
@@ -20,7 +27,6 @@ public class ElixirOfLifeItem extends Item {
     @Override
     public ItemStack finishUsing(ItemStack stack, World world, LivingEntity user) {
         if (!world.isClient() && user instanceof RegenerationCapable capable) {
-            // 如果还不是时间领主，先设置为时间领主
             if (!capable.isTimelord()) {
                 capable.setTimelord(true);
             }
@@ -34,6 +40,14 @@ public class ElixirOfLifeItem extends Item {
         }
 
         return super.finishUsing(stack, world, user);
+    }
+
+    @Override
+    public void appendTooltip(ItemStack stack, @Nullable World world, List<Text> tooltip, TooltipContext context) {
+        tooltip.add(Text.translatable("item.timelordregen.elixir_of_life.desc")
+                .setStyle(Style.EMPTY
+                        .withColor(Formatting.GRAY)
+                        .withItalic(true)));
     }
 
     @Override

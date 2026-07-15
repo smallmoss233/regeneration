@@ -11,6 +11,7 @@
   "advancements.timelordregen.unbearably_painful.description": "你感觉自己的器官正在生长，细胞正前所未有的疯狂繁殖",
   "advancements.timelordregen.enter_gallifrey.title": "螺旋政治的原点",
   "advancements.timelordregen_gallifrey.description": "时间之外的锈色星球，它的内部早已像外部一样生锈，卡掉了",
+
   "block.timelordregen.cadon_button": "卡顿按钮",
   "block.timelordregen.cadon_door": "卡顿门",
   "block.timelordregen.cadon_fence": "卡顿栅栏",
@@ -30,6 +31,7 @@
   "block.timelordregen.stripped_cadon_log": "去皮卡顿原木",
   "block.timelordregen.stripped_cadon_wood": "去皮卡顿木",
   "block.timelordregen.typha_pod": "香蒲荚",
+
   "command.regen.data.error": "未找到重生数据。",
   "command.regen.fail": "没有剩余重生次数或已在重生中！",
   "command.regen.name": "重生",
@@ -38,6 +40,7 @@
   "command.timelordregen.success.set_timelord": "已将 %s 设为时间领主",
   "command.timelordregen.success.set_uses": "已将 %s 的重生次数设为 %d",
   "command.timelordregen.error.not_player": "目标不是玩家",
+
   "gui.regen.settings.remaining": "剩余重生次数：%s",
   "gui.regen.settings.title": "重生设置",
   "gui.regen.settings.red": "红色",
@@ -52,8 +55,11 @@
   "death.attack.timelordregen.regeneration": "%1$s 重生过度了",
 
   "item.timelordregen.elixir_of_life": "重生灵药",
-  "item.timelordregen.elixir_of_life.desc": "赋予时间领主重生能力",
+  "item.timelordregen.elixir_of_life.desc": "(赋予你伽理弗雷人的重生能力，蜕变为真正的时间领主)",
   "item.timelordregen.pocket_watch": "怀表",
+  "item.timelordregen.pocket_watch.owner": "属于 %s",
+  "item.timelordregen.pocket_watch.charges": "存储次数：%d/%d",
+  "item.timelordregen.pocket_watch.desc": "时间领主的重生容器，首次使用绑定主人，可在玩家与怀表间传输重生次数",
   "itemGroup.timelordregen.item_group": "重生",
 
   "origin.timelordregen.regeneration.description": "你的周围不再会生成幻翼，你的皮肤下会生长出一层透明硬化膜，你能在水下与真空生存更长时间，对食物的消耗更低，同时，你的身体有一种通过再生全身细胞来欺骗死亡的方式，但只有有限的十二次",

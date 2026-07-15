@@ -55,7 +55,6 @@ public class RegenerationClientMod implements ClientModInitializer {
         BlockRenderLayerMapRegister();
 
 	    HudRenderCallback.EVENT.register(new DelayOverlay());
-	    ModelPredicateProviderRegistry.register(RegenerationModItems.POCKET_WATCH, id("open"), (stack, world, entity, seed) -> PocketWatchItem.isOpened(stack) ? 1.0f : 0.0f);
 
         ClientPlayNetworking.registerGlobalReceiver(Networking.OPEN_GUI_PACKET, (client, handler, buf, responseSender) -> {
             client.execute(() -> {
