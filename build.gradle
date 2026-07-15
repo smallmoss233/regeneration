@@ -119,11 +119,6 @@ processResources {
     inputs.property "version", project.version
     inputs.property "amblekit_version", project.amblekit_version
 
-    duplicatesStrategy = DuplicatesStrategy.INCLUDE
-
-    exclude 'src/main/generated/**'
-    exclude '**/lang/*.json'
-
     def expansionVars = [
             "version": project.version,
             "amblekit_version": project.amblekit_version
