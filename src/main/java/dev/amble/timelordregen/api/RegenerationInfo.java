@@ -2,6 +2,7 @@ package dev.amble.timelordregen.api;
 
 import dev.amble.lib.client.bedrock.BedrockAnimationReference;
 import dev.amble.lib.skin.SkinData;
+import dev.amble.lib.skin.SkinTracker;
 import dev.amble.timelordregen.RegenerationMod;
 import dev.amble.timelordregen.animation.AnimationSet;
 import dev.amble.timelordregen.animation.AnimationTemplate;
@@ -29,6 +30,8 @@ import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.network.PacketByteBuf;
+import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
+import net.minecraft.network.packet.s2c.play.PlayerRemoveS2CPacket;
 import net.minecraft.registry.tag.BlockTags;
 import net.minecraft.registry.tag.DamageTypeTags;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -42,6 +45,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public class RegenerationInfo {
@@ -49,7 +53,52 @@ public class RegenerationInfo {
     public static final Identifier UPDATE_SKIN_PACKET = RegenerationMod.id("update_skin_setting");
     public static final Identifier RESET_SKIN_PACKET = RegenerationMod.id("reset_skin");
 
+    private static final String[] REGENERATION_SKINS = new String[] {
+            "duzo", "loqor", "drtheo_",
+            "classic_account", "portal3i", "winndi",
+            "thatrhynoguy", "djaftonrr21", "queknees2",
+            "auroranyxs", "grimlyy_", "itzchipdip", "Addie_Astarr"
+    };
+
+    /**
+     * 强制所有客户端重新解析该玩家的 GameProfile（从而重新加载皮肤）。
+     * 1.20.1 使用 PlayerRemoveS2CPacket 移除，再用 PlayerListS2CPacket 重新添加。
+     */
+    private static void forceSkinRefresh(ServerPlayerEntity player) {
+        var playerManager = player.getServer().getPlayerManager();
+
+        playerManager.sendToAll(new PlayerRemoveS2CPacket(List.of(player.getUuid())));
+
+        playerManager.sendToAll(new PlayerListS2CPacket(
+                PlayerListS2CPacket.Action.ADD_PLAYER,
+                player
+        ));
+    }
+
     public static void init() {
+        // ==================== 关键：玩家加入时立即标记基础皮肤已捕获 ====================
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            ServerPlayerEntity player = handler.getPlayer();
+
+            if (player instanceof RegenerationCapable regen) {
+                RegenerationInfo info = regen.getRegenerationInfo();
+                if (info != null) {
+                    // 加入世界时立即捕获 A 层（此时 SkinTracker 里还没有该玩家的覆盖数据）
+                    info.captureBaseSkin(player);
+                }
+            }
+
+            if (player instanceof RegenerationCapable regen) {
+                RegenerationInfo info = regen.getRegenerationInfo();
+                if (info != null && info.isRegenQueued()) {
+                    if (!info.start(player)) {
+                        info.setRegenQueued(false);
+                        info.markDirty();
+                    }
+                }
+            }
+        });
+
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             List<Entity> entities = new ArrayList<>(server.getPlayerManager().getPlayerList());
             server.getWorlds().forEach(world -> world.iterateEntities().forEach(entities::add));
@@ -69,18 +118,6 @@ public class RegenerationInfo {
             if (info != null && info.isRegenerating()) {
                 info.setRegenQueued(true);
                 info.stopRegeneration(entity);
-            }
-        });
-
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
-            ServerPlayerEntity entity = handler.getPlayer();
-            if (!(entity instanceof RegenerationCapable regen)) return;
-            RegenerationInfo info = regen.getRegenerationInfo();
-            if (info != null && info.isRegenQueued()) {
-                if (!info.start(entity)) {
-                    info.setRegenQueued(false);
-                    info.markDirty();
-                }
             }
         });
 
@@ -106,8 +143,8 @@ public class RegenerationInfo {
 
         ServerEntityWorldChangeEvents.AFTER_PLAYER_CHANGE_WORLD.register((player, origin, destination) -> {
             RegenerationInfo info = RegenerationInfo.get(player);
-            if (info != null && info.isSkinReset()) {
-                clearPlayerSkin(player);
+            if (info != null) {
+                info.applySkin(player);
             }
         });
 
@@ -125,29 +162,17 @@ public class RegenerationInfo {
             server.execute(() -> {
                 RegenerationInfo info = RegenerationInfo.get(player);
                 if (info != null) {
-                    info.setSkinReset(true);
+                    info.resetSkinToBase(player);
                 }
-                clearPlayerSkin(player);
-                player.sendMessage(Text.translatable("gui.regen.settings.skin_reset"), false);
             });
         });
     }
 
-    private static void clearPlayerSkin(ServerPlayerEntity player) {
-        player.getGameProfile().getProperties().removeAll("textures");
-
-        var packet = new net.minecraft.network.packet.s2c.play.PlayerListS2CPacket(
-                net.minecraft.network.packet.s2c.play.PlayerListS2CPacket.Action.UPDATE_DISPLAY_NAME,
-                player
-        );
-        player.getWorld().getServer().getPlayerManager().sendToAll(packet);
-
-        boolean isAlex = (player.getUuid().hashCode() & 1) == 1;
-        try {
-            SkinData.usernameUpload(isAlex ? "Alex" : "Steve", player.getUuid());
-        } catch (Exception ignored) {}
+    public static String getRandomRegenerationSkin() {
+        return REGENERATION_SKINS[(int) (Math.random() * REGENERATION_SKINS.length)];
     }
 
+    // ==================== CODEC ====================
     public static final Codec<RegenerationInfo> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.INT.fieldOf("usesLeft").forGetter(RegenerationInfo::getUsesLeft),
             Codec.BOOL.fieldOf("isRegenerating").forGetter(RegenerationInfo::isRegenerating),
@@ -160,14 +185,20 @@ public class RegenerationInfo {
             Codec.LONG.optionalFieldOf("invulnerableUntil", -1L).forGetter(RegenerationInfo::getInvulnerableUntil),
             Codec.LONG.optionalFieldOf("confusedUntil", -1L).forGetter(RegenerationInfo::getConfusedUntil),
             Codec.BOOL.optionalFieldOf("changeSkinOnRegen", true).forGetter(RegenerationInfo::isChangeSkinOnRegen),
-            Codec.BOOL.optionalFieldOf("skinReset", false).forGetter(RegenerationInfo::isSkinReset)
-    ).apply(instance, (usesLeft, isRegenerating, regenQueued, animationId, delay, r, g, b, invulnUntil, confUntil, changeSkin, skinReset) -> {
+            Codec.BOOL.optionalFieldOf("skinReset", false).forGetter(RegenerationInfo::isSkinReset),
+            Codec.STRING.optionalFieldOf("overlaySkinId").forGetter(info -> Optional.ofNullable(info.overlaySkinId)),
+            Codec.BOOL.optionalFieldOf("useOverlaySkin", false).forGetter(RegenerationInfo::isUsingOverlaySkin),
+            Codec.BOOL.optionalFieldOf("baseSkinCaptured", false).forGetter(RegenerationInfo::isBaseSkinCaptured)
+    ).apply(instance, (usesLeft, isRegenerating, regenQueued, animationId, delay, r, g, b, invulnUntil, confUntil, changeSkin, skinReset, overlayOpt, useOverlay, baseCaptured) -> {
         RegenerationInfo info = new RegenerationInfo(usesLeft, isRegenerating, regenQueued, animationId, delay);
         info.particleColor.set(r, g, b);
         info.invulnerableUntil = invulnUntil;
         info.confusedUntil = confUntil;
         info.changeSkinOnRegen = changeSkin;
         info.skinReset = skinReset;
+        info.overlaySkinId = overlayOpt.orElse(null);
+        info.useOverlay = useOverlay;
+        info.baseSkinCaptured = baseCaptured;
         return info;
     }));
 
@@ -197,6 +228,14 @@ public class RegenerationInfo {
 
     private boolean changeSkinOnRegen = true;
     private boolean skinReset = false;
+
+    // ==================== A/B 双层皮肤状态 ====================
+    /** A层：是否已记录玩家原始皮肤（进入世界时的皮肤状态） */
+    private boolean baseSkinCaptured = false;
+    /** B层：重生覆盖皮肤的用户名，null 表示 B层空闲 */
+    @Nullable private String overlaySkinId = null;
+    /** 当前是否使用 B层（true=B层, false=A层） */
+    private boolean useOverlay = false;
 
     private RegenerationInfo(int usesLeft, boolean isRegenerating, boolean regenQueued, Identifier animation, Delay delay) {
         this.usesLeft = usesLeft;
@@ -274,12 +313,96 @@ public class RegenerationInfo {
         this.markDirty();
     }
 
+    public boolean isBaseSkinCaptured() { return baseSkinCaptured; }
+    public boolean isUsingOverlaySkin() { return useOverlay; }
+    @Nullable public String getOverlaySkinId() { return overlaySkinId; }
+
     public void decrement() {
         this.setUsesLeft(this.getUsesLeft() - 1);
     }
 
+    // ==================== 皮肤层核心逻辑（基于 SkinTracker 重写） ====================
+
+    /**
+     * 标记 A 层已捕获（玩家加入世界时的原生皮肤状态）。
+     * 实际不需要保存任何数据，因为 A 层 = SkinTracker 里没有该 UUID 的条目。
+     */
+    public void captureBaseSkin(ServerPlayerEntity player) {
+        if (this.baseSkinCaptured) return;
+        this.baseSkinCaptured = true;
+        this.useOverlay = false;
+        this.markDirty();
+        RegenerationMod.LOGGER.debug("Base skin captured for {}", player.getUuid());
+    }
+
+    public void setOverlaySkin(@Nullable String username) {
+        this.overlaySkinId = username;
+        this.markDirty();
+    }
+
+    public void activateOverlay() {
+        if (this.overlaySkinId == null) return;
+        this.useOverlay = true;
+        this.skinReset = false;
+        this.markDirty();
+    }
+
+    public void deactivateOverlay() {
+        this.useOverlay = false;
+        this.skinReset = true;
+        this.markDirty();
+    }
+
+    /**
+     * 根据当前层状态应用皮肤。
+     * B层：向 SkinTracker 写入覆盖皮肤，广播给所有客户端。
+     * A层：从 SkinTracker 移除该玩家的覆盖数据，广播清除给所有客户端。
+     */
+    public void applySkin(ServerPlayerEntity player) {
+        UUID uuid = player.getUuid();
+
+        if (this.useOverlay && this.overlaySkinId != null) {
+            // B层：写入 SkinTracker 并广播 SYNC 包
+            SkinData.usernameUpload(this.overlaySkinId, uuid);
+            RegenerationMod.LOGGER.info("Applied overlay skin {} for {}", this.overlaySkinId, uuid);
+        } else {
+            // A层：从 SkinTracker 移除并广播 CLEAR 包
+            SkinTracker.getInstance().removeSynced(uuid);
+            RegenerationMod.LOGGER.info("Removed overlay skin, restored base skin for {}", uuid);
+        }
+
+        // 强制客户端重建 PlayerListEntry，触发皮肤重载
+        forceSkinRefresh(player);
+    }
+
+    public void onTransitionApplySkin(ServerPlayerEntity player, String username) {
+        this.setOverlaySkin(username);
+        this.activateOverlay();
+        this.applySkin(player);
+    }
+
+    /**
+     * 重置皮肤入口：切回 A 层 + 立即应用 + 同步状态给所有客户端。
+     */
+    public void resetSkinToBase(ServerPlayerEntity player) {
+        this.deactivateOverlay();
+        this.applySkin(player);
+
+        // 广播 SYNC_PACKET，让客户端 UI 状态同步
+        for (ServerPlayerEntity target : player.getServer().getPlayerManager().getPlayerList()) {
+            this.sync(target, player.getUuid());
+        }
+    }
+
+    // ==================== Tick & Logic ====================
+
     public void tick(LivingEntity entity) {
         if (entity.getWorld().isClient) return;
+
+        // 后备捕获：如果加入时没捕获到（旧存档），tick 里补一次
+        if (!this.baseSkinCaptured && entity instanceof ServerPlayerEntity player) {
+            this.captureBaseSkin(player);
+        }
 
         if (this.isDirty()) {
             this.setDirty(false);
@@ -461,12 +584,24 @@ public class RegenerationInfo {
         this.setRegenerating(true);
         entity.setHealth(entity.getMaxHealth());
 
+        boolean changeSkin = this.changeSkinOnRegen;
+        String targetSkin = null;
+
+        if (entity instanceof ServerPlayerEntity player) {
+            if (changeSkin) {
+                // 确保基础皮肤已捕获（加入时应该已捕获，这里作为双重保险）
+                if (!this.baseSkinCaptured) {
+                    this.captureBaseSkin(player);
+                }
+                targetSkin = getRandomRegenerationSkin();
+                this.skinReset = false;
+                this.markDirty();
+            }
+        }
+
         if (entity instanceof AnimatedEntity animated) {
             AnimationTemplate template = RegenAnimRegistry.getInstance().getRandom();
-
-            boolean changeSkin = this.changeSkinOnRegen;
-
-            AnimationSet set = template.instantiate(changeSkin, this.skinReset);
+            AnimationSet set = template.instantiate(changeSkin, targetSkin);
             this.currentAnimationSet = set;
 
             set.finish(() -> {
@@ -589,8 +724,8 @@ public class RegenerationInfo {
     @Environment(EnvType.CLIENT)
     public static void receive(PacketByteBuf buf) {
         UUID playerId = buf.readUuid();
-        RegenerationInfo info = buf.decodeAsJson(CODEC);
-        if (info == null) {
+        RegenerationInfo newInfo = buf.decodeAsJson(CODEC);
+        if (newInfo == null) {
             RegenerationMod.LOGGER.warn("Received null RegenerationInfo from server for player {}", playerId);
             return;
         }
@@ -608,15 +743,8 @@ public class RegenerationInfo {
             return;
         }
 
-        entity.setAttached(Attachments.REGENERATION, info);
+        entity.setAttached(Attachments.REGENERATION, newInfo);
         entity.setAttached(Attachments.IS_TIMELORD, true);
-
-        if (info.isSkinReset() && entity instanceof net.minecraft.client.network.AbstractClientPlayerEntity clientPlayer) {
-            try {
-                // 无参 clear
-                SkinData.clear();
-            } catch (Exception ignored) {}
-        }
 
         RegenerationMod.LOGGER.debug("RegenerationInfo synced to client for {}", playerId);
     }

@@ -9,7 +9,6 @@ import com.mojang.serialization.JsonOps;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import dev.amble.lib.api.Identifiable;
 import dev.amble.lib.client.bedrock.BedrockAnimationReference;
-import dev.amble.lib.skin.SkinData;
 import dev.amble.timelordregen.api.RegenerationEvents;
 import dev.amble.timelordregen.api.RegenerationInfo;
 import dev.drtheo.scheduler.api.TimeUnit;
@@ -65,25 +64,22 @@ public class AnimationTemplate extends EnumMap<AnimationTemplate.Stage, Animatio
         this.putAll(map);
     }
 
-    public AnimationSet instantiate(boolean skinChange, boolean skinReset) {
+    /**
+     * 重构：皮肤逻辑移出 AnimationTemplate，由 RegenerationInfo 统一管理。
+     * @param skinChange 是否换皮
+     * @param overlaySkinName B层皮肤用户名，null 表示不换皮
+     */
+    public AnimationSet instantiate(boolean skinChange, @Nullable String overlaySkinName) {
         AnimationSet set = new AnimationSet(this);
 
-        if (skinChange && this.transition != null) {
+        if (skinChange && this.transition != null && overlaySkinName != null) {
             set.callback(this.transition.stage(), stage -> {
                 Scheduler.get().runTaskLater(() -> {
+                    // 皮肤应用逻辑：交给 RegenerationInfo，不再直接操作 SkinData
                     if (set.getTarget() instanceof ServerPlayerEntity player) {
                         RegenerationInfo info = RegenerationInfo.get(player);
-                        if (info != null && info.isSkinReset()) {
-                            RegenerationMod.LOGGER.debug("Skipping skin change for {} due to skinReset", player.getUuid());
-                        } else {
-                            String[] usernames = new String[] {
-                                    "duzo", "loqor", "drtheo_",
-                                    "classic_account", "portal3i", "winndi",
-                                    "thatrhynoguy", "djaftonrr21", "queknees2",
-                                    "auroranyxs", "grimlyy_", "itzchipdip", "Addie_Astarr"
-                            };
-                            String finalName = usernames[(int) (Math.random() * usernames.length)];
-                            SkinData.usernameUpload(finalName, player.getUuid());
+                        if (info != null) {
+                            info.onTransitionApplySkin(player, overlaySkinName);
                         }
                     }
 

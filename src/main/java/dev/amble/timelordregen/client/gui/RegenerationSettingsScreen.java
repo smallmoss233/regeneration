@@ -1,6 +1,5 @@
 package dev.amble.timelordregen.client.gui;
 
-import dev.amble.lib.skin.SkinData;
 import dev.amble.timelordregen.api.RegenerationInfo;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
@@ -14,6 +13,7 @@ import net.minecraft.util.Formatting;
 public class RegenerationSettingsScreen extends Screen {
     private final PlayerEntity player;
     private final RegenerationInfo info;
+    private ButtonWidget toggleSkinButton;
 
     public RegenerationSettingsScreen(PlayerEntity player) {
         super(Text.translatable("gui.regen.settings.title"));
@@ -26,19 +26,11 @@ public class RegenerationSettingsScreen extends Screen {
         int centerX = this.width / 2;
         int centerY = this.height / 2;
 
-        // 重置皮肤按钮
-        this.addDrawableChild(ButtonWidget.builder(
-                Text.translatable("gui.regen.settings.reset_skin"),
-                button -> {
-                    ClientPlayNetworking.send(RegenerationInfo.RESET_SKIN_PACKET, PacketByteBufs.empty());
-                    player.sendMessage(Text.translatable("gui.regen.settings.skin_reset"), false);
-                }
-        ).position(centerX - 100, centerY - 30).size(200, 20).build());
-
-        // 重生换皮开关
+        // 重生更换皮肤开关
         boolean changeSkin = info != null && info.isChangeSkinOnRegen();
-        this.addDrawableChild(ButtonWidget.builder(
-                Text.translatable(changeSkin ? "gui.regen.settings.disable_skin_change" : "gui.regen.settings.enable_skin_change"),
+        this.toggleSkinButton = ButtonWidget.builder(
+                Text.translatable("gui.regen.settings.toggle_skin_change",
+                        Text.translatable(changeSkin ? "gui.regen.settings.on" : "gui.regen.settings.off")),
                 button -> {
                     if (info == null) return;
                     boolean newValue = !info.isChangeSkinOnRegen();
@@ -48,16 +40,25 @@ public class RegenerationSettingsScreen extends Screen {
                     buf.writeBoolean(newValue);
                     ClientPlayNetworking.send(RegenerationInfo.UPDATE_SKIN_PACKET, buf);
 
-                    button.setMessage(Text.translatable(newValue ? "gui.regen.settings.disable_skin_change" : "gui.regen.settings.enable_skin_change"));
-                    player.sendMessage(Text.translatable(newValue ? "gui.regen.settings.skin_change_enabled" : "gui.regen.settings.skin_change_disabled"), false);
+                    button.setMessage(Text.translatable("gui.regen.settings.toggle_skin_change",
+                            Text.translatable(newValue ? "gui.regen.settings.on" : "gui.regen.settings.off")));
                 }
-        ).position(centerX - 100, centerY).size(200, 20).build());
+        ).position(centerX - 100, centerY - 30).size(200, 20).build();
+        this.addDrawableChild(this.toggleSkinButton);
+
+        // 重置皮肤按钮（放在开关下面，点击不输出聊天内容）
+        this.addDrawableChild(ButtonWidget.builder(
+                Text.translatable("gui.regen.settings.reset_skin"),
+                button -> {
+                    ClientPlayNetworking.send(RegenerationInfo.RESET_SKIN_PACKET, PacketByteBufs.empty());
+                }
+        ).position(centerX - 100, centerY - 5).size(200, 20).build());
 
         // 完成按钮
         this.addDrawableChild(ButtonWidget.builder(
                 Text.translatable("gui.regen.settings.done"),
                 button -> this.close()
-        ).position(centerX - 50, centerY + 40).size(100, 20).build());
+        ).position(centerX - 50, centerY + 30).size(100, 20).build());
     }
 
     @Override
@@ -74,12 +75,6 @@ public class RegenerationSettingsScreen extends Screen {
                     Text.translatable("gui.regen.settings.not_timelord").formatted(Formatting.RED),
                     this.width / 2, this.height / 2 - 45, 0xFFFFFF);
         }
-
-        boolean changeSkin = info != null && info.isChangeSkinOnRegen();
-        drawContext.drawCenteredTextWithShadow(this.textRenderer,
-                Text.translatable("gui.regen.settings.skin_change_status",
-                        Text.translatable(changeSkin ? "gui.regen.settings.on" : "gui.regen.settings.off")).formatted(Formatting.GRAY),
-                this.width / 2, this.height / 2 + 30, 0xFFFFFF);
 
         super.render(drawContext, mouseX, mouseY, delta);
     }
