@@ -8,38 +8,51 @@ import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.particle.DefaultParticleType;
-import net.minecraft.particle.ParticleEffect;
 import org.jetbrains.annotations.Nullable;
 
 @Environment(EnvType.CLIENT)
 public class RightRegenParticle extends ExplosionSmokeParticle {
     private final SpriteProvider spriteProvider;
 
-    public RightRegenParticle(ClientWorld clientWorld, double d, double e, double f, SpriteProvider spriteProvider, Entity entity,
-                       float yawOffset, float pitchOffset, boolean shouldPitch, boolean shouldFollowPlayer, float speed) {
+    public RightRegenParticle(ClientWorld clientWorld, double d, double e, double f,
+                              double velX, double velY, double velZ,
+                              SpriteProvider spriteProvider, Entity entity,
+                              float yawOffset, float pitchOffset, boolean shouldPitch, boolean shouldFollowPlayer,
+                              float speed, boolean shortLife) {
         super(clientWorld, d, e, f, 0, 0, 0, spriteProvider);
         this.spriteProvider = spriteProvider;
-
-        if (!(entity instanceof PlayerEntity player)) return;
         this.gravityStrength = 0.01f;
         this.velocityMultiplier = 0.999f;
 
-        float yawRad = (float) Math.toRadians(player.headYaw + yawOffset/*shouldFollowPlayer ? (player.headYaw + yawOffset) : yawOffset*/);
-        float pitchRad = shouldPitch ? (float) Math.toRadians(shouldFollowPlayer ? (player.getPitch() + pitchOffset) : pitchOffset) : 0f;
+        double dirX, dirY, dirZ;
 
-        double dirX = -Math.sin(yawRad) * Math.cos(pitchRad);
-        double dirY = shouldPitch ? -Math.sin(pitchRad) : 0;
-        double dirZ = Math.cos(yawRad) * Math.cos(pitchRad);
+        if (!shouldFollowPlayer && (velX != 0 || velY != 0 || velZ != 0)) {
+            // ★ 骨骼绑定模式：直接使用传入的世界空间速度
+            dirX = velX;
+            dirY = velY;
+            dirZ = velZ;
+        } else if (entity instanceof PlayerEntity player) {
+            float yawRad = (float) Math.toRadians(player.headYaw + yawOffset);
+            float pitchRad = shouldPitch ? (float) Math.toRadians(shouldFollowPlayer ? (player.getPitch() + pitchOffset) : pitchOffset) : 0f;
+            dirX = -Math.sin(yawRad) * Math.cos(pitchRad);
+            dirY = shouldPitch ? -Math.sin(pitchRad) : 0;
+            dirZ = Math.cos(yawRad) * Math.cos(pitchRad);
+        } else if (entity instanceof LivingEntity living) {
+            float yawRad = (float) Math.toRadians(living.getYaw() + yawOffset);
+            float pitchRad = shouldPitch ? (float) Math.toRadians(pitchOffset) : 0f;
+            dirX = -Math.sin(yawRad) * Math.cos(pitchRad);
+            dirY = shouldPitch ? -Math.sin(pitchRad) : 0;
+            dirZ = Math.cos(yawRad) * Math.cos(pitchRad);
+        } else {
+            dirX = 0; dirY = 0; dirZ = 0;
+        }
 
         double randX = Math.random() * 0.06 - 0.04;
         double randY = Math.random() * 0.06 - 0.04;
         double randZ = Math.random() * 0.06 - 0.04;
         double length = Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
         if (length != 0) {
-            dirX /= length;
-            dirY /= length;
-            dirZ /= length;
+            dirX /= length; dirY /= length; dirZ /= length;
         }
         this.velocityX = dirX * speed + randX;
         this.velocityY = dirY * speed + randY;
@@ -50,7 +63,7 @@ public class RightRegenParticle extends ExplosionSmokeParticle {
         this.alpha = 0.4f + (float) Math.random() * 0.2f;
         this.scale *= 0.5f;
         this.setColor(1f, 0.9f, 0.9f);
-        this.maxAge = this.random.nextInt(4) + 10;
+        this.maxAge = shortLife ? this.random.nextInt(2) + 4 : this.random.nextInt(4) + 10;
         this.collidesWithWorld = true;
     }
 
@@ -94,10 +107,12 @@ public class RightRegenParticle extends ExplosionSmokeParticle {
 
         @Override
         public @Nullable Particle createParticle(RegenParticleEffect regenParticle, ClientWorld world, double x, double y, double z, double velocityX, double velocityY, double velocityZ) {
-            RightRegenParticle rightRegenParticle = new RightRegenParticle(world, x, y, z, this.spriteProvider,
-                    regenParticle.getEntity(world), regenParticle.getYawOffset(), regenParticle.getPitchOffset(), regenParticle.getShouldPitch(), regenParticle.getShouldFollowPlayer(), regenParticle.getSpeed());
-            rightRegenParticle.setSprite(this.spriteProvider);
-            return rightRegenParticle;
+            RightRegenParticle p = new RightRegenParticle(world, x, y, z, velocityX, velocityY, velocityZ, this.spriteProvider,
+                    regenParticle.getEntity(world), regenParticle.getYawOffset(), regenParticle.getPitchOffset(),
+                    regenParticle.getShouldPitch(), regenParticle.getShouldFollowPlayer(), regenParticle.getSpeed(),
+                    regenParticle.isShortLife());
+            p.setSprite(this.spriteProvider);
+            return p;
         }
     }
 }
