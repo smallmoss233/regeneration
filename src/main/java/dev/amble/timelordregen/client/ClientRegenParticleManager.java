@@ -21,17 +21,13 @@ import net.minecraft.util.math.Vec3d;
 @Environment(EnvType.CLIENT)
 public class ClientRegenParticleManager {
 
-    /**
-     * 第三人称：每帧在 LivingEntityRenderer.render TAIL 调用
-     * 延缓期 + 动画期 都会生成粒子
-     */
     public static void trySpawnForEntity(LivingEntity entity, float tickDelta) {
         if (!(entity instanceof RegenerationCapable capable)) return;
         capable.withInfo().ifPresent(info -> {
             if (!info.isActive()) return;
             if (!(entity instanceof AbstractClientPlayerEntity player)) return;
 
-            // ★ 关键：延缓期没有动画，用默认值 0.4f
+            boolean isDelay = info.getDelay().isRunning();
             float lerpedValue = resolveLerpedValue(entity);
 
             PlayerEntityRenderer renderer = (PlayerEntityRenderer) MinecraftClient.getInstance()
@@ -39,50 +35,44 @@ public class ClientRegenParticleManager {
             var model = renderer.getModel();
             ClientWorld world = (ClientWorld) entity.getWorld();
 
-            MatrixStack worldStack = buildEntityWorldStack(entity);
+            MatrixStack baseStack = buildEntityWorldStack(entity);
 
-            ClientParticleUtil.spawnForPart(world, entity, worldStack, model.rightArm, "right_arm", lerpedValue, false);
-            ClientParticleUtil.spawnForPart(world, entity, worldStack, model.leftArm, "left_arm", lerpedValue, false);
-            ClientParticleUtil.spawnForPart(world, entity, worldStack, model.head, "head", lerpedValue, false);
+            // 双手：延缓期 + 动画期 都有
+            ClientParticleUtil.spawnForPart(world, entity, baseStack, model.rightArm, "right_arm", lerpedValue, false, isDelay);
+            ClientParticleUtil.spawnForPart(world, entity, baseStack, model.leftArm, "left_arm", lerpedValue, false, isDelay);
+
+            // 头部：只在动画期生成，延缓期不生成
+            if (!isDelay) {
+                ClientParticleUtil.spawnForPart(world, entity, baseStack, model.head, "head", lerpedValue, false, isDelay);
+            }
         });
     }
 
-    /**
-     * 第一人称：每帧在 PlayerEntityRendererMixin.renderArm TAIL 调用
-     * 延缓期 + 动画期 都会生成粒子
-     */
     public static void trySpawnForFirstPersonArm(AbstractClientPlayerEntity player, ModelPart arm, String partName) {
         if (!(player instanceof RegenerationCapable capable)) return;
         capable.withInfo().ifPresent(info -> {
             if (!info.isActive()) return;
 
-            // ★ 关键：延缓期没有动画，用默认值 0.4f
+            boolean isDelay = info.getDelay().isRunning();
             float lerpedValue = resolveLerpedValue(player);
 
             ClientWorld world = (ClientWorld) player.getWorld();
-            MatrixStack worldStack = buildEntityWorldStack(player);
+            MatrixStack baseStack = buildEntityWorldStack(player);
 
-            // 第一人称寿命更短，但每帧生成更多
-            ClientParticleUtil.spawnForPart(world, player, worldStack, arm, partName, lerpedValue, true);
+            ClientParticleUtil.spawnForPart(world, player, baseStack, arm, partName, lerpedValue, true, isDelay);
         });
     }
 
-    /**
-     * 构建与 LivingEntityRenderer 1:1 的实体世界矩阵
-     */
     private static MatrixStack buildEntityWorldStack(LivingEntity entity) {
         MatrixStack stack = new MatrixStack();
         Vec3d pos = entity.getPos();
         stack.translate(pos.x, pos.y, pos.z);
         stack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180.0F - entity.bodyYaw));
         stack.scale(-1.0F, -1.0F, 1.0F);
-        stack.translate(0.0F, -1.501F, 0.0F);
+        stack.translate(0.0F, -1.5F, 0.0F);
         return stack;
     }
 
-    /**
-     * ★ 关键：有动画时按动画时间算 lerpedValue，延缓期直接返回 0.4f
-     */
     private static float resolveLerpedValue(LivingEntity entity) {
         if (!(entity instanceof AnimatedEntity animated)) return 0.4f;
 
