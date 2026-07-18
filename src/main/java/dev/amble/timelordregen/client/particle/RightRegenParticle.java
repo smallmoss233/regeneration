@@ -26,8 +26,8 @@ public class RightRegenParticle extends ExplosionSmokeParticle {
 
         double dirX, dirY, dirZ;
 
-        if (!shouldFollowPlayer && (velX != 0 || velY != 0 || velZ != 0)) {
-            // ★ 骨骼绑定模式：直接使用传入的世界空间速度
+        if (!shouldFollowPlayer) {
+            // ★ 骨骼绑定模式：直接使用传入的世界空间速度，不再乘以 speed
             dirX = velX;
             dirY = velY;
             dirZ = velZ;
@@ -47,16 +47,23 @@ public class RightRegenParticle extends ExplosionSmokeParticle {
             dirX = 0; dirY = 0; dirZ = 0;
         }
 
-        double randX = Math.random() * 0.06 - 0.04;
-        double randY = Math.random() * 0.06 - 0.04;
-        double randZ = Math.random() * 0.06 - 0.04;
-        double length = Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
-        if (length != 0) {
-            dirX /= length; dirY /= length; dirZ /= length;
+        if (!shouldFollowPlayer) {
+            // ★ 骨骼绑定模式：传入速度已是最终速度，只加极微小随机避免完全静止
+            this.velocityX = dirX + (Math.random() - 0.5) * 0.005;
+            this.velocityY = dirY + (Math.random() - 0.5) * 0.005;
+            this.velocityZ = dirZ + (Math.random() - 0.5) * 0.005;
+        } else {
+            double randX = Math.random() * 0.06 - 0.04;
+            double randY = Math.random() * 0.06 - 0.04;
+            double randZ = Math.random() * 0.06 - 0.04;
+            double length = Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
+            if (length != 0) {
+                dirX /= length; dirY /= length; dirZ /= length;
+            }
+            this.velocityX = dirX * speed + randX;
+            this.velocityY = dirY * speed + randY;
+            this.velocityZ = dirZ * speed + randZ;
         }
-        this.velocityX = dirX * speed + randX;
-        this.velocityY = dirY * speed + randY;
-        this.velocityZ = dirZ * speed + randZ;
 
         this.angle = (float) Math.random() * 6.2831855F;
         this.prevAngle = this.angle;

@@ -23,23 +23,19 @@ public class ClientParticleUtil {
         }
 
         // ===== 手臂 =====
-        // ★ 关键修正：forEachCuboid 内部会自动施加 part 的 pivot+旋转
-        // 外面绝对不能手动再做一遍，否则双重变换导致坐标错乱
         final Vec3d[] pivotWorld = {null};
         final Vec3d[] palmCorners = new Vec3d[4];
         final double[] bestDistSq = {-1.0};
 
         part.forEachCuboid(baseStack, (entry, path, index, cuboid) -> {
-            // entry 矩阵已包含 baseStack × partTransform
-            // 其原点 (0,0,0) 就是 pivot 的世界坐标
             if (pivotWorld[0] == null) {
                 Vector4f p = new Vector4f(0, 0, 0, 1.0F);
                 entry.getPositionMatrix().transform(p);
                 pivotWorld[0] = new Vec3d(p.x, p.y, p.z);
             }
 
-            checkFace(entry, cuboid, true, pivotWorld[0], palmCorners, bestDistSq);  // minY 端
-            checkFace(entry, cuboid, false, pivotWorld[0], palmCorners, bestDistSq); // maxY 端
+            checkFace(entry, cuboid, true, pivotWorld[0], palmCorners, bestDistSq);
+            checkFace(entry, cuboid, false, pivotWorld[0], palmCorners, bestDistSq);
         });
 
         if (bestDistSq[0] < 0 || pivotWorld[0] == null) return;
@@ -55,20 +51,24 @@ public class ClientParticleUtil {
         }
 
         if (isDelay) {
-            // 延缓期：手掌中心聚集，几乎不扩散
-            Vec3d emitPos = palmCenter.add(dir.multiply(-0.08));
-            int count = shortLife ? 3 : 1;
+            // 延缓期：在手掌端面内随机生成，速度为0，严格框在手掌范围内
+            int count = shortLife ? 4 : 2;
             for (int i = 0; i < count; i++) {
+                double u = Math.random();
+                double v = Math.random();
+                Vec3d p01 = lerp(palmCorners[0], palmCorners[1], u);
+                Vec3d p32 = lerp(palmCorners[3], palmCorners[2], u);
+                Vec3d emitPos = lerp(p01, p32, v);
+                emitPos = emitPos.add(dir.multiply(-0.06));
+
                 world.addParticle(
                         new RegenParticleEffect(entity.getId(), 0, 0, true, false, lerpedValue, shortLife),
                         emitPos.x, emitPos.y, emitPos.z,
-                        (Math.random() - 0.5) * 0.01,
-                        (Math.random() - 0.5) * 0.01,
-                        (Math.random() - 0.5) * 0.01
+                        0.0, 0.0, 0.0
                 );
             }
         } else {
-            // 动画期：在手掌端面四边形内随机发射，填满整个面
+            // 动画期：在手掌端面四边形内随机发射
             int count = shortLife ? 5 : 2;
             for (int i = 0; i < count; i++) {
                 double u = Math.random();
@@ -76,12 +76,13 @@ public class ClientParticleUtil {
                 Vec3d p01 = lerp(palmCorners[0], palmCorners[1], u);
                 Vec3d p32 = lerp(palmCorners[3], palmCorners[2], u);
                 Vec3d emitPos = lerp(p01, p32, v);
-                emitPos = emitPos.add(dir.multiply(-0.08)); // 往内侧埋一点
+                emitPos = emitPos.add(dir.multiply(-0.08));
 
-                double speed = 0.6 + Math.random() * 0.4;
-                double vx = dir.x * speed + (Math.random() - 0.5) * 0.15;
-                double vy = dir.y * speed + (Math.random() - 0.5) * 0.15;
-                double vz = dir.z * speed + (Math.random() - 0.5) * 0.15;
+                // ★ 速度直接作为世界空间最终速度，不再被 RightRegenParticle 二次缩放
+                double speed = 0.8 + Math.random() * 0.5;
+                double vx = dir.x * speed + (Math.random() - 0.5) * 0.1;
+                double vy = dir.y * speed + (Math.random() - 0.5) * 0.1;
+                double vz = dir.z * speed + (Math.random() - 0.5) * 0.1;
 
                 world.addParticle(
                         new RegenParticleEffect(entity.getId(), 0, 0, true, false, lerpedValue, shortLife),
@@ -92,10 +93,6 @@ public class ClientParticleUtil {
         }
     }
 
-    /**
-     * 计算一个端面（minY 或 maxY）的四个角世界坐标，
-     * 如果该端面离 pivot 比当前记录更远，就保存下来。
-     */
     private static void checkFace(MatrixStack.Entry entry, ModelPart.Cuboid cuboid, boolean minY,
                                   Vec3d pivotWorld, Vec3d[] outCorners, double[] bestDistSq) {
         float y = minY ? cuboid.minY : cuboid.maxY;
@@ -126,7 +123,6 @@ public class ClientParticleUtil {
         return a.multiply(1.0 - t).add(b.multiply(t));
     }
 
-    // ===== 头部保持上一版不变 =====
     private static void spawnHeadParticles(ClientWorld world, LivingEntity entity,
                                            MatrixStack baseStack, ModelPart part,
                                            float lerpedValue, boolean shortLife, boolean isDelay) {
@@ -197,7 +193,8 @@ public class ClientParticleUtil {
                         (float) (Math.random() - 0.5) * 1.2f);
                 dir.normalize();
 
-                double speed = 0.2 + Math.random() * 0.25;
+                // ★ 头部速度也直接作为最终速度
+                double speed = 0.3 + Math.random() * 0.3;
                 vx = dir.x * speed + (Math.random() - 0.5) * 0.05;
                 vy = dir.y * speed + Math.random() * 0.08;
                 vz = dir.z * speed + (Math.random() - 0.5) * 0.05;
