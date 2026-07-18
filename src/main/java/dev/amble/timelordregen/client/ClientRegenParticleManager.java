@@ -6,6 +6,7 @@ import dev.amble.lib.client.bedrock.BedrockAnimationReference;
 import dev.amble.timelordregen.api.RegenerationCapable;
 import dev.amble.timelordregen.client.particle.RightRegenParticle;
 import dev.amble.timelordregen.client.util.ClientParticleUtil;
+import dev.amble.timelordregen.core.particle_effects.RegenParticleEffect;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.client.MinecraftClient;
@@ -13,16 +14,15 @@ import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.render.*;
 import net.minecraft.client.render.entity.PlayerEntityRenderer;
-import net.minecraft.client.texture.Sprite;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.AnimationState;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
-import org.joml.Matrix3f;
 import org.joml.Matrix4f;
-import org.joml.Vector4f;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
 
 import java.util.Random;
 
@@ -45,11 +45,9 @@ public class ClientRegenParticleManager {
 
             MatrixStack baseStack = buildEntityWorldStack(entity);
 
-            // 第三人称双手
             ClientParticleUtil.spawnForPart(world, entity, baseStack, model.rightArm, "right_arm", lerpedValue, false, isDelay);
             ClientParticleUtil.spawnForPart(world, entity, baseStack, model.leftArm, "left_arm", lerpedValue, false, isDelay);
 
-            // 第三人称头部（动画期）
             if (!isDelay) {
                 ClientParticleUtil.spawnForPart(world, entity, baseStack, model.head, "head", lerpedValue, false, isDelay);
             }
@@ -57,18 +55,23 @@ public class ClientRegenParticleManager {
     }
 
     /**
-     * ★ 第一人称：直接在手臂相机空间渲染 billboard 精灵
+     * 第一人称手臂粒子 —— 接入真实粒子系统
+     * 核心修正：用手动构建的视图→世界旋转，替代有歧义的 camera.getRotation()
      */
     public static void tryRenderFirstPersonArm(AbstractClientPlayerEntity player, ModelPart arm, String partName,
                                                MatrixStack matrices, VertexConsumerProvider provider, int light) {
         if (!(player instanceof RegenerationCapable capable)) return;
+
         capable.withInfo().ifPresent(info -> {
             if (!info.isActive()) return;
 
             boolean isDelay = info.getDelay().isRunning();
+            MinecraftClient client = MinecraftClient.getInstance();
+            ClientWorld world = (ClientWorld) player.getWorld();
+            float lerpedValue = resolveLerpedValue(player);
 
+            // 1. 应用手臂变换，提取手掌【视图空间】坐标
             matrices.push();
-            // 应用 arm 局部变换，把原点移到 pivot
             matrices.translate(arm.pivotX / 16.0F, arm.pivotY / 16.0F, arm.pivotZ / 16.0F);
             if (arm.roll != 0.0F) {
                 matrices.multiply(RotationAxis.POSITIVE_Z.rotation(arm.roll));
@@ -80,46 +83,90 @@ public class ClientRegenParticleManager {
                 matrices.multiply(RotationAxis.POSITIVE_X.rotation(arm.pitch));
             }
 
-            // 计算手掌局部偏移（像素单位 → block 单位）
             Vec3d palmOffset = calculatePalmOffset(arm);
             matrices.translate(palmOffset.x / 16.0, palmOffset.y / 16.0, palmOffset.z / 16.0);
-            matrices.translate(0, 0, -0.06); // 往内侧埋一点
+            matrices.translate(0, 0, -0.06);
 
-            // 记录相机空间位置
-            Vector4f pos4 = new Vector4f(0, 0, 0, 1);
-            matrices.peek().getPositionMatrix().transform(pos4);
-            float baseX = pos4.x, baseY = pos4.y, baseZ = pos4.z;
+            Matrix4f mat = matrices.peek().getPositionMatrix();
+            float vx = mat.m30(), vy = mat.m31(), vz = mat.m32();
             matrices.pop();
 
-            // ★ 直接在当前矩阵栈渲染 billboard 精灵，不再走 world.addParticle
-            Camera camera = MinecraftClient.getInstance().gameRenderer.getCamera();
-            Sprite sprite = RightRegenParticle.Factory.getSpriteProvider().getSprite(player.getRandom());
+            // ================================================================
+            // 2. 视图空间 → 世界空间
+            //    MC 视图矩阵 ≈ Rx(pitch) * Ry(headYaw + 180)
+            //    所以逆旋转 = Ry(-headYaw - 180) * Rx(-pitch)
+            //    不依赖 camera.getRotation()，完全手搓，可控
+            // ================================================================
+            Quaternionf viewToWorld = RotationAxis.POSITIVE_Y.rotationDegrees(-player.headYaw - 180);
+            viewToWorld.mul(RotationAxis.POSITIVE_X.rotationDegrees(-player.getPitch()));
 
-            int count = isDelay ? 4 : 6;
-            float spread = isDelay ? 0.03f : 0.06f;
-            float size = isDelay ? 0.05f : 0.1f;
-            float alpha = isDelay ? 0.5f : 0.8f;
+            Vector3f worldOffset = new Vector3f(vx, vy, vz);
+            viewToWorld.transform(worldOffset);
 
-            for (int i = 0; i < count; i++) {
-                double ox = (Math.random() - 0.5) * spread;
-                double oy = (Math.random() - 0.5) * spread;
-                double oz = (Math.random() - 0.5) * spread;
+            Vec3d cameraPos = client.gameRenderer.getCamera().getPos();
+            double palmWx = cameraPos.x + worldOffset.x;
+            double palmWy = cameraPos.y + worldOffset.y;
+            double palmWz = cameraPos.z + worldOffset.z;
 
-                matrices.push();
-                matrices.translate(baseX + ox, baseY + oy, baseZ + oz);
-                // 取消手臂旋转，让精灵始终朝向相机
-                matrices.multiply(camera.getRotation());
-                matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180));
+            // 手掌发射方向（视图空间手臂指向 -Z，转回世界空间）
+            Vector3f palmDirView = new Vector3f(0, 0, -1);
+            viewToWorld.transform(palmDirView);
+            Vec3d palmDir = new Vec3d(palmDirView.x, palmDirView.y, palmDirView.z).normalize();
 
-                renderBillboardQuad(matrices, provider, sprite, size, alpha, light);
+            // ================================================================
+            // 3. 每帧生成真实粒子，0 速度，严格跟随手掌
+            //    第三人称延缓期每 tick 生成 3 个，第一人称 60fps 下每帧生成 1 个，
+            //    总密度和第三人称一致，且生成点实时跟随手掌移动
+            // ================================================================
+            long seedBase = player.getId() ^ partName.hashCode() ^ 0xDEADBEEFL;
 
-                matrices.pop();
+            if (isDelay) {
+                // 延缓期：1 个/帧，速度为 0，随机散布在手掌附近
+                Random rand = new Random(seedBase + player.age * 31 + (int)(client.getTickDelta() * 100));
+                double ox = (rand.nextDouble() - 0.5) * 0.08;
+                double oy = (rand.nextDouble() - 0.5) * 0.08;
+                double oz = (rand.nextDouble() - 0.5) * 0.08;
+
+                world.addParticle(
+                        new RegenParticleEffect(player.getId(), 0, 0, true, false, lerpedValue, false),
+                        palmWx + ox, palmWy + oy, palmWz + oz,
+                        0.0, 0.0, 0.0
+                );
+            } else {
+                // 动画期：每帧 2 个，带速度，拉出拖尾
+                int count = 2;
+                double spreadAngle = Math.toRadians(32.0);
+
+                Vec3d worldUp = Math.abs(palmDir.y) < 0.99 ? new Vec3d(0, 1, 0) : new Vec3d(1, 0, 0);
+                Vec3d axisX = palmDir.crossProduct(worldUp).normalize();
+                Vec3d axisY = palmDir.crossProduct(axisX).normalize();
+
+                Random rand = new Random(seedBase + player.age * 17 + (int)(client.getTickDelta() * 100));
+
+                for (int i = 0; i < count; i++) {
+                    double speed = 1.0 + rand.nextDouble() * 0.6;
+
+                    double theta = rand.nextDouble() * 2.0 * Math.PI;
+                    double phi = rand.nextDouble() * spreadAngle;
+                    double sinPhi = Math.sin(phi), cosPhi = Math.cos(phi);
+                    double cosTheta = Math.cos(theta), sinTheta = Math.sin(theta);
+
+                    Vec3d coneDir = palmDir.multiply(cosPhi)
+                            .add(axisX.multiply(cosTheta * sinPhi))
+                            .add(axisY.multiply(sinTheta * sinPhi));
+
+                    world.addParticle(
+                            new RegenParticleEffect(player.getId(), 0, 0, true, false, lerpedValue, false),
+                            palmWx, palmWy, palmWz,
+                            coneDir.x * speed, coneDir.y * speed, coneDir.z * speed
+                    );
+                }
             }
         });
     }
 
     /**
-     * 找手臂离 pivot 最远的端面中心（手掌位置）
+     * 找手臂离原点最远的端面中心（手掌位置）
      */
     private static Vec3d calculatePalmOffset(ModelPart arm) {
         final double[] bestDistSq = {-1.0};
@@ -148,25 +195,6 @@ public class ClientRegenParticleManager {
 
         if (bestDistSq[0] < 0) return Vec3d.ZERO;
         return new Vec3d((minX[0] + maxX[0]) * 0.5, palmY[0], (minZ[0] + maxZ[0]) * 0.5);
-    }
-
-    /**
-     * 渲染一个始终朝向相机的半透明四边形
-     */
-    private static void renderBillboardQuad(MatrixStack matrices, VertexConsumerProvider provider,
-                                            Sprite sprite, float size, float alpha, int light) {
-        Matrix4f mat = matrices.peek().getPositionMatrix();
-        Matrix3f normal = matrices.peek().getNormalMatrix();
-        VertexConsumer buffer = provider.getBuffer(RenderLayer.getEntityTranslucent(sprite.getAtlasId()));
-
-        float minU = sprite.getMinU(), maxU = sprite.getMaxU();
-        float minV = sprite.getMinV(), maxV = sprite.getMaxV();
-        int overlay = OverlayTexture.DEFAULT_UV;
-
-        buffer.vertex(mat, -size, -size, 0).color(1f, 0.9f, 0.5f, alpha).texture(minU, minV).overlay(overlay).light(light).normal(normal, 0, 0, 1).next();
-        buffer.vertex(mat, size, -size, 0).color(1f, 0.9f, 0.5f, alpha).texture(maxU, minV).overlay(overlay).light(light).normal(normal, 0, 0, 1).next();
-        buffer.vertex(mat, size, size, 0).color(1f, 0.9f, 0.5f, alpha).texture(maxU, maxV).overlay(overlay).light(light).normal(normal, 0, 0, 1).next();
-        buffer.vertex(mat, -size, size, 0).color(1f, 0.9f, 0.5f, alpha).texture(minU, maxV).overlay(overlay).light(light).normal(normal, 0, 0, 1).next();
     }
 
     private static MatrixStack buildEntityWorldStack(LivingEntity entity) {
