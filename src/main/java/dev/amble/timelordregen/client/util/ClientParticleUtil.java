@@ -5,90 +5,207 @@ import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
+import org.joml.Vector3f;
 import org.joml.Vector4f;
 
 public class ClientParticleUtil {
 
-    /**
-     * ★ 关键修正：不再手动拼矩阵，而是让 forEachCuboid 带着 baseStack 自己算世界坐标。
-     * 这样能正确处理 Bedrock 子骨骼、层级 pivot 和动画旋转。
-     */
     public static void spawnForPart(ClientWorld world, LivingEntity entity,
                                     MatrixStack baseStack, ModelPart part,
                                     String partName, float lerpedValue, boolean shortLife,
                                     boolean isDelay) {
 
-        // part pivot 在模型根空间中的坐标（block 单位）
-        float pivotX = part.pivotX / 16.0F;
-        float pivotY = part.pivotY / 16.0F;
-        float pivotZ = part.pivotZ / 16.0F;
+        if ("head".equals(partName)) {
+            spawnHeadParticles(world, entity, baseStack, part, lerpedValue, shortLife, isDelay);
+            return;
+        }
 
-        // 计算 part pivot 的世界坐标
-        Vector4f pivotWorld4 = new Vector4f(pivotX, pivotY, pivotZ, 1.0F);
-        baseStack.peek().getPositionMatrix().transform(pivotWorld4);
-        Vec3d pivotWorld = new Vec3d(pivotWorld4.x, pivotWorld4.y, pivotWorld4.z);
-
-        // 遍历所有 cuboid（含子部件），找离 pivot 最远的顶点
-        // forEachCuboid 内部会自动应用 part 及其子部件的 pivot + 旋转（完全跟随动画）
-        final Vec3d[] bestPos = {null};
+        // ===== 手臂 =====
+        // ★ 关键修正：forEachCuboid 内部会自动施加 part 的 pivot+旋转
+        // 外面绝对不能手动再做一遍，否则双重变换导致坐标错乱
+        final Vec3d[] pivotWorld = {null};
+        final Vec3d[] palmCorners = new Vec3d[4];
         final double[] bestDistSq = {-1.0};
 
         part.forEachCuboid(baseStack, (entry, path, index, cuboid) -> {
-            float minX = cuboid.minX / 16.0F;
-            float minY = cuboid.minY / 16.0F;
-            float minZ = cuboid.minZ / 16.0F;
-            float maxX = cuboid.maxX / 16.0F;
-            float maxY = cuboid.maxY / 16.0F;
-            float maxZ = cuboid.maxZ / 16.0F;
-
-            float[][] corners = {
-                    {minX, minY, minZ}, {minX, minY, maxZ}, {minX, maxY, minZ}, {minX, maxY, maxZ},
-                    {maxX, minY, minZ}, {maxX, minY, maxZ}, {maxX, maxY, minZ}, {maxX, maxY, maxZ}
-            };
-
-            for (float[] c : corners) {
-                Vector4f v = new Vector4f(c[0], c[1], c[2], 1.0F);
-                entry.getPositionMatrix().transform(v);
-                Vec3d worldPos = new Vec3d(v.x, v.y, v.z);
-                double distSq = worldPos.squaredDistanceTo(pivotWorld);
-                if (distSq > bestDistSq[0]) {
-                    bestDistSq[0] = distSq;
-                    bestPos[0] = worldPos;
-                }
+            // entry 矩阵已包含 baseStack × partTransform
+            // 其原点 (0,0,0) 就是 pivot 的世界坐标
+            if (pivotWorld[0] == null) {
+                Vector4f p = new Vector4f(0, 0, 0, 1.0F);
+                entry.getPositionMatrix().transform(p);
+                pivotWorld[0] = new Vec3d(p.x, p.y, p.z);
             }
+
+            checkFace(entry, cuboid, true, pivotWorld[0], palmCorners, bestDistSq);  // minY 端
+            checkFace(entry, cuboid, false, pivotWorld[0], palmCorners, bestDistSq); // maxY 端
         });
 
-        if (bestPos[0] == null) return;
+        if (bestDistSq[0] < 0 || pivotWorld[0] == null) return;
 
-        Vec3d emitWorldPos = bestPos[0];
-        Vec3d direction = emitWorldPos.subtract(pivotWorld);
-        if (direction.lengthSquared() > 0.001) {
-            direction = direction.normalize();
+        Vec3d palmCenter = palmCorners[0].add(palmCorners[1])
+                .add(palmCorners[2]).add(palmCorners[3]).multiply(0.25);
+
+        Vec3d dir = palmCenter.subtract(pivotWorld[0]);
+        if (dir.lengthSquared() > 0.001) {
+            dir = dir.normalize();
         } else {
-            direction = new Vec3d(0, 1, 0);
+            dir = new Vec3d(0, 1, 0);
         }
 
-        int count = shortLife ? 3 : 1;
-        for (int i = 0; i < count; i++) {
-            double vx, vy, vz;
+        if (isDelay) {
+            // 延缓期：手掌中心聚集，几乎不扩散
+            Vec3d emitPos = palmCenter.add(dir.multiply(-0.08));
+            int count = shortLife ? 3 : 1;
+            for (int i = 0; i < count; i++) {
+                world.addParticle(
+                        new RegenParticleEffect(entity.getId(), 0, 0, true, false, lerpedValue, shortLife),
+                        emitPos.x, emitPos.y, emitPos.z,
+                        (Math.random() - 0.5) * 0.01,
+                        (Math.random() - 0.5) * 0.01,
+                        (Math.random() - 0.5) * 0.01
+                );
+            }
+        } else {
+            // 动画期：在手掌端面四边形内随机发射，填满整个面
+            int count = shortLife ? 5 : 2;
+            for (int i = 0; i < count; i++) {
+                double u = Math.random();
+                double v = Math.random();
+                Vec3d p01 = lerp(palmCorners[0], palmCorners[1], u);
+                Vec3d p32 = lerp(palmCorners[3], palmCorners[2], u);
+                Vec3d emitPos = lerp(p01, p32, v);
+                emitPos = emitPos.add(dir.multiply(-0.08)); // 往内侧埋一点
 
+                double speed = 0.6 + Math.random() * 0.4;
+                double vx = dir.x * speed + (Math.random() - 0.5) * 0.15;
+                double vy = dir.y * speed + (Math.random() - 0.5) * 0.15;
+                double vz = dir.z * speed + (Math.random() - 0.5) * 0.15;
+
+                world.addParticle(
+                        new RegenParticleEffect(entity.getId(), 0, 0, true, false, lerpedValue, shortLife),
+                        emitPos.x, emitPos.y, emitPos.z,
+                        vx, vy, vz
+                );
+            }
+        }
+    }
+
+    /**
+     * 计算一个端面（minY 或 maxY）的四个角世界坐标，
+     * 如果该端面离 pivot 比当前记录更远，就保存下来。
+     */
+    private static void checkFace(MatrixStack.Entry entry, ModelPart.Cuboid cuboid, boolean minY,
+                                  Vec3d pivotWorld, Vec3d[] outCorners, double[] bestDistSq) {
+        float y = minY ? cuboid.minY : cuboid.maxY;
+        float x1 = cuboid.minX / 16.0f, x2 = cuboid.maxX / 16.0f;
+        float z1 = cuboid.minZ / 16.0f, z2 = cuboid.maxZ / 16.0f;
+        float yb = y / 16.0f;
+
+        Vector4f[] vs = {
+                new Vector4f(x1, yb, z1, 1.0F), new Vector4f(x2, yb, z1, 1.0F),
+                new Vector4f(x2, yb, z2, 1.0F), new Vector4f(x1, yb, z2, 1.0F)
+        };
+        Vec3d[] corners = new Vec3d[4];
+        double avgDistSq = 0;
+        for (int i = 0; i < 4; i++) {
+            entry.getPositionMatrix().transform(vs[i]);
+            corners[i] = new Vec3d(vs[i].x, vs[i].y, vs[i].z);
+            avgDistSq += corners[i].squaredDistanceTo(pivotWorld);
+        }
+        avgDistSq *= 0.25;
+
+        if (avgDistSq > bestDistSq[0]) {
+            bestDistSq[0] = avgDistSq;
+            System.arraycopy(corners, 0, outCorners, 0, 4);
+        }
+    }
+
+    private static Vec3d lerp(Vec3d a, Vec3d b, double t) {
+        return a.multiply(1.0 - t).add(b.multiply(t));
+    }
+
+    // ===== 头部保持上一版不变 =====
+    private static void spawnHeadParticles(ClientWorld world, LivingEntity entity,
+                                           MatrixStack baseStack, ModelPart part,
+                                           float lerpedValue, boolean shortLife, boolean isDelay) {
+
+        final float[] minX = {Float.MAX_VALUE};
+        final float[] maxX = {-Float.MAX_VALUE};
+        final float[] minZ = {Float.MAX_VALUE};
+        final float[] maxZ = {-Float.MAX_VALUE};
+        final float[] neckY = {Float.MAX_VALUE};
+        final boolean[] has = {false};
+
+        part.forEachCuboid(baseStack, (entry, path, index, cuboid) -> {
+            float localCX = (cuboid.minX + cuboid.maxX) * 0.5f / 16.0f;
+            float localNeckY = cuboid.maxY / 16.0f;
+            float localCZ = (cuboid.minZ + cuboid.maxZ) * 0.5f / 16.0f;
+
+            Vector4f v = new Vector4f(localCX, localNeckY, localCZ, 1.0F);
+            entry.getPositionMatrix().transform(v);
+
+            if (v.x < minX[0]) minX[0] = v.x;
+            if (v.x > maxX[0]) maxX[0] = v.x;
+            if (v.z < minZ[0]) minZ[0] = v.z;
+            if (v.z > maxZ[0]) maxZ[0] = v.z;
+            if (v.y < neckY[0]) neckY[0] = v.y;
+            has[0] = true;
+        });
+
+        if (!has[0]) return;
+
+        baseStack.push();
+        baseStack.translate(part.pivotX / 16.0F, part.pivotY / 16.0F, part.pivotZ / 16.0F);
+        if (part.roll != 0.0F) {
+            baseStack.multiply(RotationAxis.POSITIVE_Z.rotation(part.roll));
+        }
+        if (part.yaw != 0.0F) {
+            baseStack.multiply(RotationAxis.NEGATIVE_Y.rotation(part.yaw));
+        }
+        if (part.pitch != 0.0F) {
+            baseStack.multiply(RotationAxis.POSITIVE_X.rotation(part.pitch));
+        }
+
+        Vector3f upDir = new Vector3f(0, -1, 0);
+        baseStack.peek().getNormalMatrix().transform(upDir);
+        if (upDir.length() > 0.001f) upDir.normalize();
+        baseStack.pop();
+
+        double expand = 0.35;
+        double centerX = (minX[0] + maxX[0]) * 0.5;
+        double centerZ = (minZ[0] + maxZ[0]) * 0.5;
+        double rangeX = (maxX[0] - minX[0]) * 0.5 + expand;
+        double rangeZ = (maxZ[0] - minZ[0]) * 0.5 + expand;
+
+        int count = shortLife ? 12 : 8;
+        for (int i = 0; i < count; i++) {
+            double rx = centerX + (Math.random() - 0.5) * 2 * rangeX;
+            double rz = centerZ + (Math.random() - 0.5) * 2 * rangeZ;
+            Vec3d emitPos = new Vec3d(rx, neckY[0], rz);
+
+            double vx, vy, vz;
             if (isDelay) {
-                // 延缓期：不喷射，只在原地轻微漂移（手掌位置聚集）
                 vx = (Math.random() - 0.5) * 0.02;
                 vy = (Math.random() - 0.5) * 0.02;
                 vz = (Math.random() - 0.5) * 0.02;
             } else {
-                // 动画期：沿手臂/头部轴向向外喷射
-                double speed = 0.3 + Math.random() * 0.2;
-                vx = direction.x * speed + (Math.random() - 0.5) * 0.1;
-                vy = direction.y * speed + (Math.random() - 0.5) * 0.1;
-                vz = direction.z * speed + (Math.random() - 0.5) * 0.1;
+                Vector3f dir = new Vector3f(upDir);
+                dir.add((float) (Math.random() - 0.5) * 1.2f,
+                        0.3f + (float) Math.random() * 0.5f,
+                        (float) (Math.random() - 0.5) * 1.2f);
+                dir.normalize();
+
+                double speed = 0.2 + Math.random() * 0.25;
+                vx = dir.x * speed + (Math.random() - 0.5) * 0.05;
+                vy = dir.y * speed + Math.random() * 0.08;
+                vz = dir.z * speed + (Math.random() - 0.5) * 0.05;
             }
 
             world.addParticle(
                     new RegenParticleEffect(entity.getId(), 0, 0, true, false, lerpedValue, shortLife),
-                    emitWorldPos.x, emitWorldPos.y, emitWorldPos.z,
+                    emitPos.x, emitPos.y, emitPos.z,
                     vx, vy, vz
             );
         }
