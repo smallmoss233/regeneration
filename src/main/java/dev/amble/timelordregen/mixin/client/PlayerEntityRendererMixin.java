@@ -24,7 +24,6 @@ public abstract class PlayerEntityRendererMixin extends LivingEntityRenderer<Abs
     private void regen$afterRenderArm(MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light,
                                       AbstractClientPlayerEntity player, ModelPart arm, ModelPart sleeve, CallbackInfo ci) {
         String partName = arm == this.getModel().leftArm ? "left_arm" : "right_arm";
-        // ★ 第一人称：自己构建世界矩阵，不再使用相机空间的 matrices
-        ClientRegenParticleManager.trySpawnForFirstPersonArm(player, arm, partName);
+        ClientRegenParticleManager.tryRenderFirstPersonArm(player, arm, partName, matrices, vertexConsumers, light);
     }
 }

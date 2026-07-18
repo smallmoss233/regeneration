@@ -52,7 +52,7 @@ public class ClientParticleUtil {
 
         if (isDelay) {
             // 延缓期：在手掌端面内随机生成，速度为0，严格框在手掌范围内
-            int count = shortLife ? 4 : 2;
+            int count = shortLife ? 6 : 3;
             for (int i = 0; i < count; i++) {
                 double u = Math.random();
                 double v = Math.random();
@@ -68,8 +68,13 @@ public class ClientParticleUtil {
                 );
             }
         } else {
-            // 动画期：在手掌端面四边形内随机发射
-            int count = shortLife ? 5 : 2;
+            // 动画期：在手掌端面四边形内随机发射，带圆锥形扩散
+            // === 数量翻倍，接近头部密度 ===
+            int count = shortLife ? 14 : 8;
+
+            // === 圆锥扩散参数：半角增大到 32°，总张角 64° ===
+            double spreadAngle = Math.toRadians(32.0);
+
             for (int i = 0; i < count; i++) {
                 double u = Math.random();
                 double v = Math.random();
@@ -78,11 +83,30 @@ public class ClientParticleUtil {
                 Vec3d emitPos = lerp(p01, p32, v);
                 emitPos = emitPos.add(dir.multiply(-0.08));
 
-                // ★ 速度直接作为世界空间最终速度，不再被 RightRegenParticle 二次缩放
-                double speed = 0.8 + Math.random() * 0.5;
-                double vx = dir.x * speed + (Math.random() - 0.5) * 0.1;
-                double vy = dir.y * speed + (Math.random() - 0.5) * 0.1;
-                double vz = dir.z * speed + (Math.random() - 0.5) * 0.1;
+                // === 速度范围稍微提高，让扩散更有张力 ===
+                double speed = 1.0 + Math.random() * 0.6;
+
+                // ========== 圆锥形扩散核心代码 ==========
+                Vec3d worldUp = Math.abs(dir.y) < 0.99 ? new Vec3d(0, 1, 0) : new Vec3d(1, 0, 0);
+                Vec3d axisX = dir.crossProduct(worldUp).normalize();
+                Vec3d axisY = dir.crossProduct(axisX).normalize();
+
+                double theta = Math.random() * 2.0 * Math.PI;
+                double phi = Math.random() * spreadAngle;
+
+                double sinPhi = Math.sin(phi);
+                double cosPhi = Math.cos(phi);
+                double cosTheta = Math.cos(theta);
+                double sinTheta = Math.sin(theta);
+
+                Vec3d coneDir = dir.multiply(cosPhi)
+                        .add(axisX.multiply(cosTheta * sinPhi))
+                        .add(axisY.multiply(sinTheta * sinPhi));
+
+                double vx = coneDir.x * speed;
+                double vy = coneDir.y * speed;
+                double vz = coneDir.z * speed;
+                // =======================================
 
                 world.addParticle(
                         new RegenParticleEffect(entity.getId(), 0, 0, true, false, lerpedValue, shortLife),
@@ -193,7 +217,6 @@ public class ClientParticleUtil {
                         (float) (Math.random() - 0.5) * 1.2f);
                 dir.normalize();
 
-                // ★ 头部速度也直接作为最终速度
                 double speed = 0.3 + Math.random() * 0.3;
                 vx = dir.x * speed + (Math.random() - 0.5) * 0.05;
                 vy = dir.y * speed + Math.random() * 0.08;
