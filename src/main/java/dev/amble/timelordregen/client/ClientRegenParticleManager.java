@@ -23,6 +23,7 @@ import net.minecraft.util.math.Vec3d;
 public class ClientRegenParticleManager {
 
     public static void trySpawnForEntity(LivingEntity entity, float tickDelta) {
+        if (!entity.isAlive()) return;
         if (!(entity instanceof RegenerationCapable capable)) return;
         capable.withInfo().ifPresent(info -> {
             if (!info.isActive()) return;

@@ -1,6 +1,5 @@
 package dev.amble.timelordregen.animation;
 
-import dev.amble.timelordregen.RegenerationMod;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.serialization.Codec;
@@ -9,6 +8,7 @@ import com.mojang.serialization.JsonOps;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import dev.amble.lib.api.Identifiable;
 import dev.amble.lib.client.bedrock.BedrockAnimationReference;
+import dev.amble.timelordregen.RegenerationMod;
 import dev.amble.timelordregen.api.RegenerationEvents;
 import dev.amble.timelordregen.api.RegenerationInfo;
 import dev.drtheo.scheduler.api.TimeUnit;

@@ -9,8 +9,6 @@ import dev.amble.timelordregen.client.renderers.sky.GallifreySkyProperties;
 import dev.amble.timelordregen.client.util.ClientColors;
 import dev.amble.timelordregen.core.RegenerationDimensions;
 import dev.amble.timelordregen.core.RegenerationModBlocks;
-import dev.amble.timelordregen.core.RegenerationModItems;
-import dev.amble.timelordregen.core.item.PocketWatchItem;
 import dev.amble.timelordregen.network.Networking;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.blockrenderlayer.v1.BlockRenderLayerMap;
@@ -20,13 +18,14 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.particle.v1.ParticleFactoryRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.DimensionRenderingRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
 import net.fabricmc.fabric.api.resource.ResourcePackActivationType;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.item.ModelPredicateProviderRegistry;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.sound.SoundEvents;
 import org.lwjgl.glfw.GLFW;
 
 import static dev.amble.timelordregen.RegenerationMod.id;
@@ -66,29 +65,51 @@ public class RegenerationClientMod implements ClientModInitializer {
     registerKeyBindings();
 }
 
-//GUI按键开关
-private void registerKeyBindings() {
-    // 创建按键绑定，默认未绑定（玩家自行在控制菜单设置）
-    KeyBinding openSettingsKey = new KeyBinding(
-            "key.timelordregen.open_settings",      // 翻译 key
-            InputUtil.Type.KEYSYM,
-            GLFW.GLFW_KEY_UNKNOWN,                  // 默认无按键
-            "category.timelordregen"                 // 按键分类
-    );
-    KeyBindingHelper.registerKeyBinding(openSettingsKey);
+    private void registerKeyBindings() {
+        // GUI 设置键：默认 U
+        KeyBinding openSettingsKey = new KeyBinding(
+                "key.timelordregen.open_settings",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_U,        // ★ 默认 U 键
+                "category.timelordregen"
+        );
+        KeyBindingHelper.registerKeyBinding(openSettingsKey);
 
-    // 监听按键按下事件
-    ClientTickEvents.END_CLIENT_TICK.register(client -> {
-        // 确保玩家存在且按键被按下
-        if (openSettingsKey.wasPressed() && client.player != null) {
-            // 发送请求包给服务端
-            net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(
-                    dev.amble.timelordregen.network.Networking.REQUEST_OPEN_GUI,
-                    net.fabricmc.fabric.api.networking.v1.PacketByteBufs.create()
-            );
-        }
-    });
-}
+        // 强制重生键：默认未绑定，避免误触；玩家可手动在控制菜单里绑定
+        KeyBinding forceRegenKey = new KeyBinding(
+                "key.timelordregen.force_regen",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_UNKNOWN,  // ★ 默认无按键
+                "category.timelordregen"
+        );
+        KeyBindingHelper.registerKeyBinding(forceRegenKey);
+
+        // 长按状态
+        final int[] holdTicks = {0};
+        final boolean[] triggered = {false};
+
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            if (client.player == null) return;
+
+            // GUI 打开（单击触发）
+            if (openSettingsKey.wasPressed()) {
+                ClientPlayNetworking.send(Networking.REQUEST_OPEN_GUI, PacketByteBufs.create());
+            }
+
+            // 强制重生：长按 2s（40 tick）触发
+            if (forceRegenKey.isPressed()) {
+                holdTicks[0]++;
+                if (holdTicks[0] >= 40 && !triggered[0]) {
+                    triggered[0] = true;
+                    ClientPlayNetworking.send(Networking.FORCE_REGEN, PacketByteBufs.empty());
+                    client.player.playSound(SoundEvents.UI_BUTTON_CLICK.value(), 0.4f, 1.0f);
+                }
+            } else {
+                holdTicks[0] = 0;
+                triggered[0] = false;
+            }
+        });
+    }
 
     public static void BlockRenderLayerMapRegister() {
         BlockRenderLayerMap.INSTANCE.putBlock(RegenerationModBlocks.GALLIFREY_GRASS_BLOCK, RenderLayer.getCutout());

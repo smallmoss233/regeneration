@@ -1,33 +1,22 @@
 package dev.amble.timelordregen.client;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import dev.amble.lib.animation.AnimatedInstance;
-import dev.amble.lib.animation.client.AnimatedEntityModel;
 import dev.amble.lib.client.bedrock.BedrockAnimation;
 import dev.amble.timelordregen.RegenerationMod;
 import dev.amble.timelordregen.animation.AnimationTemplate;
 import dev.amble.timelordregen.api.RegenerationCapable;
 import dev.amble.timelordregen.api.RegenerationInfo;
-import dev.amble.timelordregen.client.particle.RightRegenParticle;
-import dev.amble.timelordregen.client.util.ClientParticleUtil;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.model.Model;
 import net.minecraft.client.model.ModelPart;
-import net.minecraft.client.particle.SpriteProvider;
-import net.minecraft.client.render.*;
-import net.minecraft.client.texture.Sprite;
+import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.entity.LivingEntity;
 import net.minecraft.util.Arm;
 import net.minecraft.util.dynamic.Codecs;
 import org.jetbrains.annotations.Nullable;
-import org.joml.Matrix4f;
-import org.joml.Quaternionf;
 
 @Environment(EnvType.CLIENT)
 public enum RegenRenderers implements RegenRendering {

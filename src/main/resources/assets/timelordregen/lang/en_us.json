@@ -50,6 +50,11 @@
   "gui.regen.settings.toggle_skin_change": "Change skin on regeneration: %s",
   "gui.regen.settings.on": "On",
   "gui.regen.settings.off": "Off",
+  "timelordregen.tardis.alarm_message": "%s is regenerating!",
+  "gui.regen.settings.tardis_mode": "Change TARDIS interior on regeneration: %s",
+  "gui.regen.settings.tardis_mode.enabled": "Random",
+  "gui.regen.settings.tardis_mode.disabled": "Disabled",
+  "gui.regen.settings.tardis_mode.refurbish": "Refurbish Only",
 
   "effect.timelordregen.confusion": "Regeneration Confusion",
 
@@ -69,6 +74,7 @@
   "origin.timelordregen.timelord.name": "Time Lord",
 
   "key.timelordregen.open_settings": "Open Regeneration Settings",
+  "key.timelordregen.force_regen": "Force Regeneration(2s)",
   "category.timelordregen": "Time Lord - Regeneration",
 
   "dimension.timelordregen.gallifrey": "Gallifrey"

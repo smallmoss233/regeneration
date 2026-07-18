@@ -1,7 +1,7 @@
 package dev.amble.timelordregen.animation;
 
-import dev.amble.timelordregen.RegenerationMod;
 import dev.amble.lib.register.datapack.SimpleDatapackRegistry;
+import dev.amble.timelordregen.RegenerationMod;
 import net.minecraft.util.Identifier;
 
 public class RegenAnimRegistry extends SimpleDatapackRegistry<AnimationTemplate> {

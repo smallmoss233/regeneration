@@ -14,6 +14,7 @@ public class RegenerationSettingsScreen extends Screen {
     private final PlayerEntity player;
     private final RegenerationInfo info;
     private ButtonWidget toggleSkinButton;
+    private ButtonWidget tardisModeButton;
 
     public RegenerationSettingsScreen(PlayerEntity player) {
         super(Text.translatable("gui.regen.settings.title"));
@@ -46,7 +47,7 @@ public class RegenerationSettingsScreen extends Screen {
         ).position(centerX - 100, centerY - 30).size(200, 20).build();
         this.addDrawableChild(this.toggleSkinButton);
 
-        // 重置皮肤按钮（放在开关下面，点击不输出聊天内容）
+        // 重置皮肤按钮
         this.addDrawableChild(ButtonWidget.builder(
                 Text.translatable("gui.regen.settings.reset_skin"),
                 button -> {
@@ -54,11 +55,29 @@ public class RegenerationSettingsScreen extends Screen {
                 }
         ).position(centerX - 100, centerY - 5).size(200, 20).build());
 
+        // TARDIS 内饰模式切换
+        int tardisMode = info != null ? info.getTardisInteriorMode() : 0;
+        this.tardisModeButton = ButtonWidget.builder(
+                getTardisModeText(tardisMode),
+                button -> {
+                    if (info == null) return;
+                    int newMode = (info.getTardisInteriorMode() + 1) % 3;
+                    info.setTardisInteriorMode(newMode);
+
+                    var buf = PacketByteBufs.create();
+                    buf.writeInt(newMode);
+                    ClientPlayNetworking.send(RegenerationInfo.UPDATE_TARDIS_MODE_PACKET, buf);
+
+                    button.setMessage(getTardisModeText(newMode));
+                }
+        ).position(centerX - 100, centerY + 20).size(200, 20).build();
+        this.addDrawableChild(this.tardisModeButton);
+
         // 完成按钮
         this.addDrawableChild(ButtonWidget.builder(
                 Text.translatable("gui.regen.settings.done"),
                 button -> this.close()
-        ).position(centerX - 50, centerY + 30).size(100, 20).build());
+        ).position(centerX - 50, centerY + 55).size(100, 20).build());
     }
 
     @Override
@@ -77,5 +96,15 @@ public class RegenerationSettingsScreen extends Screen {
         }
 
         super.render(drawContext, mouseX, mouseY, delta);
+    }
+
+    private static Text getTardisModeText(int mode) {
+        String subKey = switch (mode) {
+            case 1 -> "disabled";
+            case 2 -> "refurbish";
+            default -> "enabled";
+        };
+        return Text.translatable("gui.regen.settings.tardis_mode",
+                Text.translatable("gui.regen.settings.tardis_mode." + subKey));
     }
 }

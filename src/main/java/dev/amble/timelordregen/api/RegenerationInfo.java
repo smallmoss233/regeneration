@@ -19,6 +19,7 @@ import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.entity.event.v1.ServerEntityWorldChangeEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
+import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
@@ -26,6 +27,7 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.damage.DamageTypes;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
@@ -52,6 +54,11 @@ public class RegenerationInfo {
     public static final Identifier SYNC_PACKET = RegenerationMod.id("sync_info");
     public static final Identifier UPDATE_SKIN_PACKET = RegenerationMod.id("update_skin_setting");
     public static final Identifier RESET_SKIN_PACKET = RegenerationMod.id("reset_skin");
+    public static final Identifier UPDATE_TARDIS_MODE_PACKET = RegenerationMod.id("update_tardis_mode");
+
+    public static final int TARDIS_MODE_ENABLED = 0;      // 默认：随机更换内饰类型
+    public static final int TARDIS_MODE_DISABLED = 1;     // 关闭：不更改内饰
+    public static final int TARDIS_MODE_REFURBISH = 2;      // 只重构：重新生成当前内饰
 
     private static final String[] REGENERATION_SKINS = new String[] {
             "duzo", "loqor", "drtheo_",
@@ -76,15 +83,16 @@ public class RegenerationInfo {
     }
 
     public static void init() {
-        // ==================== 关键：玩家加入时立即标记基础皮肤已捕获 ====================
+        // ==================== 记录玩家皮肤/时间领主状态 ====================
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayerEntity player = handler.getPlayer();
 
             if (player instanceof RegenerationCapable regen) {
                 RegenerationInfo info = regen.getRegenerationInfo();
                 if (info != null) {
-                    // 加入世界时立即捕获 A 层（此时 SkinTracker 里还没有该玩家的覆盖数据）
                     info.captureBaseSkin(player);
+                    info.applySkin(player);
+                    info.sync(player, player.getUuid());
                 }
             }
 
@@ -130,6 +138,24 @@ public class RegenerationInfo {
             return true;
         });
 
+        ServerLivingEntityEvents.ALLOW_DEATH.register((entity, damageSource, damageAmount) -> {
+            RegenerationInfo info = RegenerationInfo.get(entity);
+            if (info == null) return true;
+
+            // ★ /kill 直接允许死亡，不触发重生保护（包括延缓期、动画期）
+            if (damageSource.isOf(DamageTypes.GENERIC_KILL)) return true;
+
+            // 已经在重生状态（延缓期/动画期），阻止普通死亡
+            if (info.isActive()) return false;
+
+            if (entity.isRemoved()) return true;
+
+            if (info.getUsesLeft() > 0) {
+                return !info.tryStart(entity);
+            }
+            return true;
+        });
+
         AttackBlockCallback.EVENT.register((player, world, hand, pos, direction) -> {
             RegenerationInfo info = RegenerationInfo.get(player);
             if (info != null && info.getDelay().hasEvent()) {
@@ -166,6 +192,25 @@ public class RegenerationInfo {
                 }
             });
         });
+
+        ServerPlayNetworking.registerGlobalReceiver(UPDATE_TARDIS_MODE_PACKET, (server, player, handler, buf, responseSender) -> {
+            int mode = buf.readInt();
+            server.execute(() -> {
+                RegenerationInfo info = RegenerationInfo.get(player);
+                if (info != null) {
+                    info.setTardisInteriorMode(mode);
+                }
+            });
+        });
+
+        ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) -> {
+            if (!(newPlayer instanceof RegenerationCapable regen)) return;
+            RegenerationInfo info = RegenerationInfo.get(newPlayer);
+            if (info != null) {
+                info.stopRegeneration(newPlayer);
+                info.sync(newPlayer, newPlayer.getUuid());
+            }
+        });
     }
 
     public static String getRandomRegenerationSkin() {
@@ -188,8 +233,9 @@ public class RegenerationInfo {
             Codec.BOOL.optionalFieldOf("skinReset", false).forGetter(RegenerationInfo::isSkinReset),
             Codec.STRING.optionalFieldOf("overlaySkinId").forGetter(info -> Optional.ofNullable(info.overlaySkinId)),
             Codec.BOOL.optionalFieldOf("useOverlaySkin", false).forGetter(RegenerationInfo::isUsingOverlaySkin),
-            Codec.BOOL.optionalFieldOf("baseSkinCaptured", false).forGetter(RegenerationInfo::isBaseSkinCaptured)
-    ).apply(instance, (usesLeft, isRegenerating, regenQueued, animationId, delay, r, g, b, invulnUntil, confUntil, changeSkin, skinReset, overlayOpt, useOverlay, baseCaptured) -> {
+            Codec.BOOL.optionalFieldOf("baseSkinCaptured", false).forGetter(RegenerationInfo::isBaseSkinCaptured),
+            Codec.INT.optionalFieldOf("tardisInteriorMode", TARDIS_MODE_ENABLED).forGetter(RegenerationInfo::getTardisInteriorMode)
+    ).apply(instance, (usesLeft, isRegenerating, regenQueued, animationId, delay, r, g, b, invulnUntil, confUntil, changeSkin, skinReset, overlayOpt, useOverlay, baseCaptured, tardisInteriorMode) -> {
         RegenerationInfo info = new RegenerationInfo(usesLeft, isRegenerating, regenQueued, animationId, delay);
         info.particleColor.set(r, g, b);
         info.invulnerableUntil = invulnUntil;
@@ -199,6 +245,7 @@ public class RegenerationInfo {
         info.overlaySkinId = overlayOpt.orElse(null);
         info.useOverlay = useOverlay;
         info.baseSkinCaptured = baseCaptured;
+        info.tardisInteriorMode = tardisInteriorMode;
         return info;
     }));
 
@@ -236,6 +283,8 @@ public class RegenerationInfo {
     @Nullable private String overlaySkinId = null;
     /** 当前是否使用 B层（true=B层, false=A层） */
     private boolean useOverlay = false;
+
+    private int tardisInteriorMode = TARDIS_MODE_ENABLED;
 
     private RegenerationInfo(int usesLeft, boolean isRegenerating, boolean regenQueued, Identifier animation, Delay delay) {
         this.usesLeft = usesLeft;
@@ -315,6 +364,13 @@ public class RegenerationInfo {
 
     public boolean isBaseSkinCaptured() { return baseSkinCaptured; }
     public boolean isUsingOverlaySkin() { return useOverlay; }
+
+    public int getTardisInteriorMode() { return tardisInteriorMode; }
+    public void setTardisInteriorMode(int mode) {
+        this.tardisInteriorMode = MathHelper.clamp(mode, 0, 2);
+        this.markDirty();
+    }
+
     @Nullable public String getOverlaySkinId() { return overlaySkinId; }
 
     public void decrement() {
@@ -564,7 +620,7 @@ public class RegenerationInfo {
 
     public boolean tryStart(LivingEntity entity) {
         if (this.isActive() || this.usesLeft <= 0) return false;
-        if (!entity.isAlive()) return false;
+        if (entity.isRemoved()) return false;
         this.delay.start(entity.age);
         this.markDirty();
         entity.setHealth(entity.getMaxHealth());

@@ -11,22 +11,17 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(LivingEntity.class)
 public class LivingEntityMixin {
-	@Inject(method="damage", at=@At("HEAD"), cancellable=true)
-	private void regeneration$damage(DamageSource source, float amount, CallbackInfoReturnable<Boolean> cir) {
-		if (amount == Float.MAX_VALUE) return;
+    @Inject(method="damage", at=@At("HEAD"), cancellable=true)
+    private void regeneration$damage(DamageSource source, float amount, CallbackInfoReturnable<Boolean> cir) {
+        if (amount == Float.MAX_VALUE) return;
 
-		if (this instanceof RegenerationCapable capable) {
-			RegenerationInfo info = capable.getRegenerationInfo();
-			if (info == null) return;
-			if (info.isActive()) {
-				cir.setReturnValue(false);
-			}
-
-			LivingEntity thisEntity = (LivingEntity)(Object)this;
-			if (amount >= thisEntity.getHealth() && info.tryStart(thisEntity)) {
-				cir.setReturnValue(false);
-			}
-		}
-	}
+        if (this instanceof RegenerationCapable capable) {
+            RegenerationInfo info = capable.getRegenerationInfo();
+            if (info == null) return;
+            
+            if (info.isActive()) {
+                cir.setReturnValue(false);
+            }
+        }
+    }
 }
-

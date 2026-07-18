@@ -21,10 +21,18 @@ public class DelayOverlay implements HudRenderCallback {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.player == null || mc.world == null) return;
 
+        // ★ 关键新增：玩家死亡/重生期间强制停止渲染和音效
+        if (!mc.player.isAlive()) {
+            if (SOUND != null) {
+                mc.getSoundManager().stop(SOUND);
+                SOUND = null;
+            }
+            return;
+        }
+
         RegenerationInfo info = RegenerationInfo.get(mc.player);
         boolean active = info != null && !info.isRegenerating() && info.getDelay().isRunning();
 
-        // 如果没有激活状态，停止音效并退出
         if (!active) {
             if (SOUND != null) {
                 mc.getSoundManager().stop(SOUND);

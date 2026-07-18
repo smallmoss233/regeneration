@@ -49,6 +49,11 @@
   "gui.regen.settings.toggle_skin_change": "重生更换皮肤：%s",
   "gui.regen.settings.on": "开",
   "gui.regen.settings.off": "关",
+  "timelordregen.tardis.alarm_message": "%s 正在重生！",
+  "gui.regen.settings.tardis_mode": "塔迪斯内重生更换内饰：%s",
+  "gui.regen.settings.tardis_mode.enabled": "随机更换",
+  "gui.regen.settings.tardis_mode.disabled": "关闭",
+  "gui.regen.settings.tardis_mode.refurbish": "仅重构",
 
   "effect.timelordregen.confusion": "重生混乱",
 
@@ -68,6 +73,7 @@
   "origin.timelordregen.timelord.name": "时间领主",
 
   "key.timelordregen.open_settings": "打开重生设置",
+  "key.timelordregen.force_regen": "手动强制重生(2s)",
   "category.timelordregen": "时间领主-重生",
 
   "dimension.timelordregen.gallifrey": "伽理弗雷"
