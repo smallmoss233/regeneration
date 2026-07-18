@@ -123,9 +123,16 @@ public class RegenerationInfo {
             ServerPlayerEntity entity = handler.getPlayer();
             if (!(entity instanceof RegenerationCapable regen)) return;
             RegenerationInfo info = regen.getRegenerationInfo();
-            if (info != null && info.isRegenerating()) {
-                info.setRegenQueued(true);
+            if (info == null) return;
+
+            if (info.isRegenerating()) {
+                // 动画期退出：强制完成重生，应用无敌/混乱/TARDIS内饰等
+                info.forceFinish(entity);
+            } else if (info.getDelay().isRunning()) {
+                // 延缓期退出：停止 delay，标记为 queued，下次 JOIN 时重新 start
                 info.stopRegeneration(entity);
+                info.setRegenQueued(true);
+                info.markDirty();
             }
         });
 
@@ -708,6 +715,28 @@ public class RegenerationInfo {
                 "Regeneration finished for {}. Dynamic damage reduction + boosted regen active for {} ticks, confused for {} ticks",
                 entity.getUuid(), INVULNERABLE_DURATION, confusionDuration
         );
+    }
+
+    /**
+     * 强制完成重生流程（用于玩家退出等异常中断场景）。
+     * 不扣次数（已在 start() 中扣除），直接应用 finish 的所有效果。
+     */
+    public void forceFinish(LivingEntity entity) {
+        this.resetAnimationState(entity);
+        this.stopRegeneration(entity);
+
+        long worldTime = entity.getWorld().getTime();
+        this.invulnerableUntil = worldTime + INVULNERABLE_DURATION;
+        int confusionDuration = CONFUSION_MIN_TICKS + RegenerationMod.RANDOM.nextInt(CONFUSION_MAX_EXTRA_TICKS);
+        this.confusedUntil = worldTime + confusionDuration;
+        this.confusionEffectTimer = 0;
+        this.regenBoostTimer = 0;
+
+        RegenerationEvents.FINISH.invoker().onFinish(entity, this);
+        this.setAnimation(RegenAnimRegistry.getInstance().getRandom());
+        this.markDirty();
+
+        RegenerationMod.LOGGER.info("Forced regeneration finish for {} due to disconnect", entity.getUuid());
     }
 
     private void resetAnimationState(LivingEntity entity) {
